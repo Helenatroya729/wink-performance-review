@@ -1,0 +1,11 @@
+<svg width="482" height="156" viewBox="0 0 482 156" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- WINK текст -->
+  <path d="M47.5 37L32 119H53L61 79L69.5 119H85.5L94 79L102 119H123L107.5 37H83.5L77.5 81L71.5 37H47.5Z" fill="white"/>
+  <path d="M133 37V119H154V37H133Z" fill="white"/>
+  <path d="M168 37V119H189V85L213 119H239L210 80L237 37H213L189 71V37H168Z" fill="white"/>
+  <path d="M249 37V119H270V85L294 119H320L291 80L318 37H294L270 71V37H249Z" fill="white"/>
+  
+  <!-- Оранжевая стрелка -->
+  <path d="M350 48L425 78V125L380 140L350 97V48Z" fill="#FF6B00"/>
+  <path d="M425 78L425 125L380 140L425 78Z" fill="#FF8533"/>
+</svg>

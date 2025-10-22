@@ -1,0 +1,103 @@
+.dashboard-header {
+  background-color: var(--wink-dark-gray);
+  border-bottom: 2px solid var(--wink-orange);
+  padding: 16px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.logo-small {
+  height: 50px;
+  width: auto;
+}
+
+.logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.logo-title {
+  color: var(--wink-white);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.user-name {
+  color: var(--wink-white);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.user-role {
+  color: var(--wink-orange);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.logout-button {
+  padding: 10px 24px;
+  background-color: var(--wink-gray);
+  border: 1px solid var(--wink-orange);
+  border-radius: 6px;
+  color: var(--wink-white);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.logout-button:hover {
+  background-color: var(--wink-orange);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .header-content {
+    padding: 0 16px;
+  }
+
+  .logo-small {
+    width: 60px;
+  }
+
+  .logo-title {
+    font-size: 14px;
+  }
+
+  .user-name {
+    font-size: 14px;
+  }
+
+  .user-role {
+    font-size: 11px;
+  }
+}
