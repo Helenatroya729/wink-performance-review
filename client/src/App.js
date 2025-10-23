@@ -5,6 +5,12 @@ import EmployeeDashboard from './pages/EmployeeDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import HRDashboard from './pages/HRDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import SelfAssessment from './pages/SelfAssessment';
+import PeerFeedback from './pages/PeerFeedback';
+import TeamPage from './pages/TeamPage';
+import ManagerEvaluation from './pages/ManagerEvaluation';
+import EmployeeDetails from './pages/EmployeeDetails';
+import PotentialAssessment from './pages/PotentialAssessment';
 import './App.css';
 
 function App() {
@@ -53,9 +59,45 @@ function App() {
             </ProtectedRoute>
           } />
           
+          <Route path="/self-assessment" element={
+            <ProtectedRoute allowedRoles={['employee', 'manager']}>
+              <SelfAssessment user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/peer-feedback" element={
+            <ProtectedRoute allowedRoles={['employee', 'manager']}>
+              <PeerFeedback user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
           <Route path="/manager" element={
             <ProtectedRoute allowedRoles={['manager']}>
               <ManagerDashboard user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/team" element={
+            <ProtectedRoute allowedRoles={['manager', 'hr', 'admin']}>
+              <TeamPage user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/employee/:employeeId" element={
+            <ProtectedRoute allowedRoles={['manager', 'hr', 'admin']}>
+              <EmployeeDetails user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/manager-evaluation" element={
+            <ProtectedRoute allowedRoles={['manager']}>
+              <ManagerEvaluation user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/potential-assessment" element={
+            <ProtectedRoute allowedRoles={['manager']}>
+              <PotentialAssessment user={user} onLogout={handleLogout} />
             </ProtectedRoute>
           } />
           

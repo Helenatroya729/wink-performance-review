@@ -117,38 +117,112 @@
 .test-credentials {
   background-color: var(--wink-gray);
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
   border: 1px solid var(--wink-light-gray);
+  max-height: 450px;
+  overflow-y: auto;
 }
 
 .test-title {
   color: var(--wink-orange);
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   font-size: 14px;
-  text-transform: uppercase;
+  text-align: center;
   letter-spacing: 0.5px;
 }
 
-.credentials-grid {
-  display: grid;
-  gap: 12px;
-}
-
-.credential-item {
+.test-title strong {
   color: var(--wink-white);
-  font-size: 13px;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 107, 0, 0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-.credential-item:last-child {
-  border-bottom: none;
+.quick-login-hint {
+  color: var(--wink-light-gray);
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 16px;
+  font-style: italic;
 }
 
-.credential-item strong {
+.credentials-section {
+  margin-bottom: 20px;
+}
+
+.credentials-section:last-child {
+  margin-bottom: 0;
+}
+
+.role-header {
   color: var(--wink-orange);
-  margin-right: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 107, 0, 0.2);
+  padding-bottom: 6px;
+}
+
+.credential-card {
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.credential-card:hover {
+  background-color: rgba(255, 107, 0, 0.1);
+  border-color: var(--wink-orange);
+  transform: translateX(4px);
+}
+
+.credential-card:last-child {
+  margin-bottom: 0;
+}
+
+.credential-name {
+  color: var(--wink-white);
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.credential-email {
+  color: var(--wink-orange);
+  font-size: 13px;
+  font-family: 'Courier New', monospace;
+  margin-bottom: 4px;
+}
+
+.credential-position {
+  color: var(--wink-light-gray);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Скроллбар для списка пользователей */
+.test-credentials::-webkit-scrollbar {
+  width: 6px;
+}
+
+.test-credentials::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.test-credentials::-webkit-scrollbar-thumb {
+  background: var(--wink-orange);
+  border-radius: 3px;
+}
+
+.test-credentials::-webkit-scrollbar-thumb:hover {
+  background: #FF8533;
 }
 
 /* Адаптивность */

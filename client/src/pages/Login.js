@@ -2,35 +2,57 @@ import React, { useState } from 'react';
 import './Login.css';
 import WinkLogo from '../assets/wink-logo.svg';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
 const Login = ({ onLogin }) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Тестовые пользователи для демонстрации
-  const testUsers = [
-    { username: 'employee', password: 'employee123', role: 'employee', name: 'Иван Иванов' },
-    { username: 'manager', password: 'manager123', role: 'manager', name: 'Мария Петрова' },
-    { username: 'hr', password: 'hr123', role: 'hr', name: 'Елена Сидорова' },
-    { username: 'admin', password: 'admin123', role: 'admin', name: 'Администратор' }
-  ];
+  const handleQuickLogin = (userEmail) => {
+    setEmail(userEmail);
+    setPassword('123456');
+    setError('');
+  };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    const user = testUsers.find(
-      u => u.username === username && u.password === password
-    );
-
-    if (user) {
-      onLogin({
-        username: user.username,
-        name: user.name,
-        role: user.role
+    try {
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
       });
-    } else {
-      setError('Неверный логин или пароль');
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Ошибка при входе');
+        setLoading(false);
+        return;
+      }
+
+      // Сохраняем токен и данные пользователя
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      onLogin({
+        ...data.user,
+        name: `${data.user.first_name} ${data.user.last_name}`,
+        token: data.token
+      });
+
+    } catch (err) {
+      setError('Ошибка подключения к серверу');
+      console.error('Login error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -46,14 +68,15 @@ const Login = ({ onLogin }) => {
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="username">Логин</label>
+            <label htmlFor="email">Email</label>
             <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Введите логин"
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Введите email"
               required
+              disabled={loading}
             />
           </div>
 
@@ -66,30 +89,78 @@ const Login = ({ onLogin }) => {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Введите пароль"
               required
+              disabled={loading}
             />
           </div>
 
           {error && <div className="error-message">{error}</div>}
 
-          <button type="submit" className="login-button">
-            Войти
+          <button type="submit" className="login-button" disabled={loading}>
+            {loading ? 'Вход...' : 'Войти'}
           </button>
         </form>
 
         <div className="test-credentials">
-          <p className="test-title">Тестовые учетные записи:</p>
-          <div className="credentials-grid">
-            <div className="credential-item">
-              <strong>Сотрудник:</strong> employee / employee123
+          <p className="test-title">📋 Тестовые учетные записи (пароль для всех: <strong>123456</strong>)</p>
+          <p className="quick-login-hint">💡 Кликните на карточку для автозаполнения формы</p>
+          
+          <div className="credentials-section">
+            <h4 className="role-header">👤 Администратор</h4>
+            <div className="credential-card" onClick={() => handleQuickLogin('admin@wink.ru')}>
+              <div className="credential-name">Системный Администратор</div>
+              <div className="credential-email">admin@wink.ru</div>
             </div>
-            <div className="credential-item">
-              <strong>Руководитель:</strong> manager / manager123
+          </div>
+
+          <div className="credentials-section">
+            <h4 className="role-header">👔 HR</h4>
+            <div className="credential-card" onClick={() => handleQuickLogin('hr@wink.ru')}>
+              <div className="credential-name">Ольга Соколова</div>
+              <div className="credential-email">hr@wink.ru</div>
+              <div className="credential-position">HR Менеджер</div>
             </div>
-            <div className="credential-item">
-              <strong>HR:</strong> hr / hr123
+          </div>
+
+          <div className="credentials-section">
+            <h4 className="role-header">👨‍💼 Руководители</h4>
+            <div className="credential-card" onClick={() => handleQuickLogin('manager1@wink.ru')}>
+              <div className="credential-name">Кирилл Менеджеров</div>
+              <div className="credential-email">manager1@wink.ru</div>
+              <div className="credential-position">Team Lead</div>
             </div>
-            <div className="credential-item">
-              <strong>Администратор:</strong> admin / admin123
+            <div className="credential-card" onClick={() => handleQuickLogin('manager2@wink.ru')}>
+              <div className="credential-name">Мария Петрова</div>
+              <div className="credential-email">manager2@wink.ru</div>
+              <div className="credential-position">Marketing Manager</div>
+            </div>
+          </div>
+
+          <div className="credentials-section">
+            <h4 className="role-header">👥 Сотрудники</h4>
+            <div className="credential-card" onClick={() => handleQuickLogin('emp1@wink.ru')}>
+              <div className="credential-name">Иван Иванов</div>
+              <div className="credential-email">emp1@wink.ru</div>
+              <div className="credential-position">Senior Developer</div>
+            </div>
+            <div className="credential-card" onClick={() => handleQuickLogin('emp2@wink.ru')}>
+              <div className="credential-name">Анна Сидорова</div>
+              <div className="credential-email">emp2@wink.ru</div>
+              <div className="credential-position">Middle Developer</div>
+            </div>
+            <div className="credential-card" onClick={() => handleQuickLogin('emp3@wink.ru')}>
+              <div className="credential-name">Петр Петров</div>
+              <div className="credential-email">emp3@wink.ru</div>
+              <div className="credential-position">Junior Developer</div>
+            </div>
+            <div className="credential-card" onClick={() => handleQuickLogin('emp4@wink.ru')}>
+              <div className="credential-name">Ольга Васильева</div>
+              <div className="credential-email">emp4@wink.ru</div>
+              <div className="credential-position">Marketing Specialist</div>
+            </div>
+            <div className="credential-card" onClick={() => handleQuickLogin('emp5@wink.ru')}>
+              <div className="credential-name">Дмитрий Смирнов</div>
+              <div className="credential-email">emp5@wink.ru</div>
+              <div className="credential-position">Content Manager</div>
             </div>
           </div>
         </div>
