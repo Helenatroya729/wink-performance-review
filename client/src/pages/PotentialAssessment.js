@@ -40,10 +40,6 @@ const PotentialAssessment = ({ user, onLogout }) => {
     ole_priority_2: ''
   });
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
   const loadInitialData = async () => {
     try {
       const [cyclesData, usersData] = await Promise.all([
@@ -63,6 +59,11 @@ const PotentialAssessment = ({ user, onLogout }) => {
       console.error('Ошибка загрузки данных:', error);
     }
   };
+
+  useEffect(() => {
+    loadInitialData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

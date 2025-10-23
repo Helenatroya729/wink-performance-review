@@ -7,7 +7,7 @@ import './Dashboard.css';
 const EmployeeDashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [goals, setGoals] = useState([]);
-  const [stats, setStats] = useState({});
+  // const [stats, setStats] = useState(null); // Временно отключено
   const [loading, setLoading] = useState(true);
   const [pendingReviews, setPendingReviews] = useState([]);
 

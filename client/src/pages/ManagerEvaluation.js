@@ -27,10 +27,6 @@ const ManagerEvaluation = ({ user, onLogout }) => {
     overall_rating: 5 // 0-10
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     try {
       setLoading(true);
@@ -50,6 +46,11 @@ const ManagerEvaluation = ({ user, onLogout }) => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleEmployeeSelect = async (employee) => {
     setSelectedEmployee(employee);

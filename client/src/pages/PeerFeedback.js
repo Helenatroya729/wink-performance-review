@@ -42,10 +42,6 @@ const PeerFeedback = ({ user, onLogout }) => {
     }
   }, [location.search]);
 
-  useEffect(() => {
-    loadData();
-  }, [activeTab]);
-
   const loadData = async () => {
     try {
       setLoading(true);
@@ -83,6 +79,11 @@ const PeerFeedback = ({ user, onLogout }) => {
       alert('Ошибка: ' + error.message);
     }
   };
+
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const handleStartReview = (review) => {
     setCurrentReview(review);

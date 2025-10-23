@@ -11,7 +11,7 @@ const SelfAssessment = ({ user, onLogout }) => {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [existingAssessment, setExistingAssessment] = useState(null);
+  // const [existingAssessment, setExistingAssessment] = useState(null); // Временно не используется
   
   const [assessment, setAssessment] = useState({
     goal_assessments: {}, // { goal_id: { achieved: true/false, comment: '' } }
