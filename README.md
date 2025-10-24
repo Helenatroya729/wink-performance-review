@@ -1,52 +1,101 @@
-# WINK Performance Review System
+# Performance Review System# WINK Performance Review System
 
-Система оценки персонала для компании WINK
 
-## Технологии
 
-- **Frontend**: React 18
-- **Backend**: Node.js + Express
-- **Авторизация**: JWT
-- **Стиль**: Фирменный стиль WINK (черный + оранжевый)
+Enterprise performance evaluation system for WINK company.Система оценки персонала для компании WINK
 
-## Установка
 
-1. Установите зависимости для всего проекта:
-```bash
-npm run install-all
+
+## Quick Start## Технологии
+
+
+
+1. Install PostgreSQL 17- **Frontend**: React 18
+
+2. Restore database from backup:- **Backend**: Node.js + Express
+
+   ```powershell- **Авторизация**: JWT
+
+   .\RESTORE_DATABASE.ps1- **Стиль**: Фирменный стиль WINK (черный + оранжевый)
+
+   ```
+
+3. Start servers:## Установка
+
+   ```powershell
+
+   .\START_FULL.ps11. Установите зависимости для всего проекта:
+
+   ``````bash
+
+4. Open http://localhost:3000npm run install-all
+
 ```
+
+## Full Documentation
 
 2. Или установите отдельно:
-```bash
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete installation and configuration guide.```bash
+
 # Корневая папка
-npm install
 
-# Frontend
+## Default Usersnpm install
+
+
+
+All users have password: **123456**# Frontend
+
 cd client
+
+- Admin: admin@wink.runpm install
+
+- HR: hr@wink.ru
+
+- Manager: manager@wink.ru# Backend
+
+- Employee: employee@wink.rucd ../server
+
 npm install
 
-# Backend
-cd ../server
-npm install
-```
+## Tech Stack```
 
-## Запуск проекта
 
-### Запуск всего проекта (Frontend + Backend):
-```bash
+
+- Frontend: React## Запуск проекта
+
+- Backend: Node.js + Express
+
+- Database: PostgreSQL 17### Запуск всего проекта (Frontend + Backend):
+
+- Auth: JWT```bash
+
 npm run dev
+
+## Features```
+
+
+
+- Employee self-assessment### Или запускайте отдельно:
+
+- Peer feedback
+
+- Manager evaluations**Frontend** (порт 3000):
+
+- Potential assessment```bash
+
+- HR analytics dashboardcd client
+
+- 9-box matrix visualizationnpm start
+
 ```
 
-### Или запускайте отдельно:
-
-**Frontend** (порт 3000):
-```bash
-cd client
-npm start
-```
+## License
 
 **Backend** (порт 5000):
-```bash
+
+MIT```bash
+
 cd server
 npm run dev
 ```
