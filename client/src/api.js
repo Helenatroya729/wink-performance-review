@@ -38,6 +38,15 @@ const fetchAPI = async (endpoint, options = {}) => {
 
 // API методы
 const api = {
+  // Универсальные методы
+  get: (endpoint) => fetchAPI(endpoint),
+  
+  post: (endpoint, data) => 
+    fetchAPI(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+  
   // Аутентификация
   auth: {
     login: (email, password) => 
@@ -102,6 +111,11 @@ const api = {
   // Дашборд статистика
   dashboard: {
     getStats: () => fetchAPI('/dashboard/stats')
+  },
+
+  // Рейтинг сотрудника
+  employee: {
+    getMyRating: () => fetchAPI('/employee/my-rating')
   },
 
   // Оценка от коллег

@@ -24,7 +24,8 @@ const ManagerEvaluation = ({ user, onLogout }) => {
     personal_contribution_comment: '', // свободный ответ
     interaction_quality_rating: 5, // 0-10
     improvement_suggestions: '', // свободный ответ
-    overall_rating: 5 // 0-10
+    overall_rating: 5, // 0-10
+    feedback_summary: '' // агрегирующая обратная связь
   });
 
   const loadData = async () => {
@@ -110,7 +111,8 @@ const ManagerEvaluation = ({ user, onLogout }) => {
         personal_contribution_comment: '',
         interaction_quality_rating: 5,
         improvement_suggestions: '',
-        overall_rating: 5
+        overall_rating: 5,
+        feedback_summary: ''
       });
       // Перезагружаем список целей
       await loadEmployeeGoals(selectedEmployee.id, selectedCycle);
@@ -560,6 +562,81 @@ const ManagerEvaluation = ({ user, onLogout }) => {
                   onChange={(e) => setEvaluationForm({...evaluationForm, overall_rating: parseInt(e.target.value)})}
                   style={{ width: '100%' }}
                 />
+              </div>
+
+              {/* Агрегирующая обратная связь */}
+              <div className="form-group" style={{ 
+                marginTop: '40px', 
+                marginBottom: '32px',
+                padding: '24px',
+                backgroundColor: 'rgba(255, 107, 0, 0.05)',
+                borderRadius: '12px',
+                border: '2px solid var(--wink-orange)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    color: 'var(--wink-orange)', 
+                    fontSize: '18px', 
+                    fontWeight: '700'
+                  }}>
+                    Общая обратная связь (итоговое резюме)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => alert('Функция генерации с помощью ИИ будет доступна в следующей версии')}
+                    style={{
+                      padding: '8px 16px',
+                      backgroundColor: 'var(--wink-orange)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <span>🤖</span> Помощь ИИ
+                  </button>
+                </div>
+                <p style={{ 
+                  color: 'var(--wink-light-gray)', 
+                  fontSize: '14px', 
+                  marginBottom: '16px',
+                  lineHeight: '1.6'
+                }}>
+                  Напишите общее резюме вашей оценки: сильные стороны сотрудника, области для развития, 
+                  ключевые рекомендации и общее впечатление от работы в этом периоде.
+                </p>
+                <textarea
+                  value={evaluationForm.feedback_summary}
+                  onChange={(e) => setEvaluationForm({...evaluationForm, feedback_summary: e.target.value})}
+                  placeholder="Например: Сотрудник продемонстрировал высокие результаты в достижении целей, особенно выделяется... Рекомендую обратить внимание на развитие..."
+                  rows="8"
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    border: '1px solid var(--wink-orange)',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--wink-black)',
+                    color: 'var(--wink-white)',
+                    fontSize: '15px',
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    lineHeight: '1.6'
+                  }}
+                />
+                <p style={{ 
+                  color: 'var(--wink-light-gray)', 
+                  fontSize: '12px', 
+                  marginTop: '8px',
+                  fontStyle: 'italic'
+                }}>
+                  💡 В будущем вы сможете использовать ИИ для генерации резюме на основе ваших ответов
+                </p>
               </div>
 
               <div style={{ display: 'flex', gap: '12px', marginTop: '32px' }}>

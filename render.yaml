@@ -1,0 +1,27 @@
+services:
+  # Backend API
+  - type: web
+    name: wink-performance-review-api
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node server-new.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wink-performance-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+
+databases:
+  - name: wink-performance-db
+    databaseName: wink_performance_review
+    user: wink_user
+    plan: free
+    region: frankfurt

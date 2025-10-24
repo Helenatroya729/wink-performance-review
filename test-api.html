@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test HR API</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #1a1a1a; color: #fff; }
+        button { padding: 10px 20px; margin: 10px; background: #FF6B00; color: white; border: none; cursor: pointer; }
+        pre { background: #2a2a2a; padding: 15px; border-radius: 5px; overflow: auto; }
+        .error { color: #ff4444; }
+        .success { color: #44ff44; }
+    </style>
+</head>
+<body>
+    <h1>Test HR Dashboard API</h1>
+    
+    <div>
+        <h2>1. Вход</h2>
+        <button onclick="login()">Войти как HR</button>
+        <div id="login-result"></div>
+    </div>
+    
+    <div>
+        <h2>2. Получить данные сотрудников</h2>
+        <button onclick="getEmployeeScores()">Загрузить employee-scores</button>
+        <div id="scores-result"></div>
+    </div>
+    
+    <script>
+        let token = null;
+        
+        async function login() {
+            const resultDiv = document.getElementById('login-result');
+            resultDiv.innerHTML = 'Загрузка...';
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'hr@wink.ru',
+                        password: 'password'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    token = data.token;
+                    resultDiv.innerHTML = '<div class="success">✅ Вход выполнен!</div><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ Ошибка входа:</div><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Ошибка: ' + error.message + '</div>';
+            }
+        }
+        
+        async function getEmployeeScores() {
+            const resultDiv = document.getElementById('scores-result');
+            
+            if (!token) {
+                resultDiv.innerHTML = '<div class="error">❌ Сначала выполните вход!</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = 'Загрузка...';
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/hr/employee-scores', {
+                    headers: {
+                        'Authorization': 'Bearer ' + token
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = '<div class="success">✅ Получено сотрудников: ' + data.length + '</div><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ Ошибка:</div><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                }
+            } catch (error) {
+                resultDiv.innerHTML = '<div class="error">❌ Ошибка: ' + error.message + '</div>';
+            }
+        }
+    </script>
+</body>
+</html>

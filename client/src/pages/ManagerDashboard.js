@@ -13,6 +13,20 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectingGoal, setRejectingGoal] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
+  const [pendingReviews, setPendingReviews] = useState([]);
+  const [reviewPeriods, setReviewPeriods] = useState([]);
+
+  const scrollToGoals = () => {
+    const goalsSection = document.querySelector('.content-grid');
+    if (goalsSection) {
+      goalsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleFilterAndScroll = (newFilter) => {
+    setFilter(newFilter);
+    setTimeout(() => scrollToGoals(), 100);
+  };
 
   useEffect(() => {
     loadData();
@@ -21,12 +35,16 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, statsData] = await Promise.all([
+      const [goalsData, statsData, reviewsData, periodsData] = await Promise.all([
         api.goals.getAll(),
-        api.dashboard.getStats()
+        api.dashboard.getStats(),
+        api.peerFeedback.getPendingReviews(),
+        api.get('/manager/team-review-periods')
       ]);
       setTeamGoals(goalsData);
       setStats(statsData);
+      setPendingReviews(reviewsData);
+      setReviewPeriods(periodsData);
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     } finally {
@@ -93,6 +111,49 @@ const ManagerDashboard = ({ user, onLogout }) => {
 
   const pendingCount = teamGoals.filter(g => g.status === 'submitted').length;
 
+  // Формируем уведомления для руководителя
+  const notifications = [];
+  
+  // Уведомление о целях на утверждении
+  if (pendingCount > 0) {
+    notifications.push({
+      id: 1,
+      text: `${pendingCount} ${pendingCount === 1 ? 'цель требует' : 'целей требуют'} утверждения`,
+      time: 'Сейчас',
+      action: () => handleFilterAndScroll('submitted')
+    });
+  }
+  
+  // Уведомление о запросах на оценку коллег
+  if (pendingReviews.length > 0) {
+    const latestReview = pendingReviews[0];
+    notifications.push({
+      id: 2,
+      text: `${latestReview.requester_first_name} ${latestReview.requester_last_name} запрашивает вашу оценку`,
+      time: new Date(latestReview.created_at).toLocaleDateString(),
+      action: () => navigate('/peer-feedback?tab=pending')
+    });
+  }
+  
+  // Напоминание о необходимости провести оценку подчиненных
+  const needsEvaluation = teamGoals.filter(g => g.status === 'approved').length > 0;
+  if (needsEvaluation) {
+    notifications.push({
+      id: 3,
+      text: 'Необходимо провести оценку сотрудников',
+      time: '2 дня назад',
+      action: () => navigate('/manager-evaluation')
+    });
+  }
+  
+  // Напоминание о самооценке
+  notifications.push({
+    id: 4,
+    text: 'Завершить свою самооценку до 25 октября',
+    time: '3 дня назад',
+    action: () => navigate('/self-assessment')
+  });
+
   return (
     <div className="dashboard">
       <Header user={user} onLogout={onLogout} />
@@ -100,7 +161,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
       <div className="dashboard-content">
         <div className="welcome-section">
           <h1>Панель руководителя</h1>
-          <p>Управление командой и оценка сотрудников</p>
+          <p>Управление командой и личное развитие</p>
         </div>
 
         <div className="stats-grid">
@@ -108,38 +169,174 @@ const ManagerDashboard = ({ user, onLogout }) => {
             <div className="stat-value">{stats.team_size || 0}</div>
             <div className="stat-label">Сотрудников в команде</div>
           </div>
-          <div className="stat-card clickable" style={{ borderColor: '#FF6B00', cursor: 'pointer' }} onClick={() => setFilter('submitted')}>
+          <div className="stat-card clickable" style={{ borderColor: '#FF6B00', cursor: 'pointer' }} onClick={() => handleFilterAndScroll('submitted')}>
             <div className="stat-value">{pendingCount}</div>
             <div className="stat-label">Ожидают утверждения</div>
           </div>
-          <div className="stat-card clickable" onClick={() => setFilter('all')} style={{ cursor: 'pointer' }}>
+          <div className="stat-card clickable" onClick={() => handleFilterAndScroll('all')} style={{ cursor: 'pointer' }}>
             <div className="stat-value">{stats.team_goals || 0}</div>
             <div className="stat-label">Всего целей команды</div>
           </div>
-          <div className="stat-card clickable" onClick={() => setFilter('approved')} style={{ cursor: 'pointer' }}>
+          <div className="stat-card clickable" onClick={() => handleFilterAndScroll('approved')} style={{ cursor: 'pointer' }}>
             <div className="stat-value">{teamGoals.filter(g => g.status === 'approved').length}</div>
             <div className="stat-label">Целей утверждено</div>
           </div>
         </div>
 
-        <div className="quick-actions">
-          <div className="action-card clickable" onClick={() => setFilter('submitted')} style={{ borderColor: '#FF6B00', cursor: 'pointer' }}>
-            <div className="action-title">Утвердить цели</div>
+        {/* Периоды Performance Review команды */}
+        {reviewPeriods.length > 0 && (
+          <div className="section-card" style={{ marginBottom: '30px' }}>
+            <h2 className="section-title">📅 Периоды Performance Review команды</h2>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid rgba(255,255,255,0.1)' }}>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#999' }}>Сотрудник</th>
+                    <th style={{ padding: '12px', textAlign: 'left', color: '#999' }}>Должность</th>
+                    <th style={{ padding: '12px', textAlign: 'center', color: '#999' }}>Период оценки</th>
+                    <th style={{ padding: '12px', textAlign: 'center', color: '#999' }}>Статус</th>
+                    <th style={{ padding: '12px', textAlign: 'center', color: '#999' }}>Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviewPeriods.map(period => {
+                    const startDate = new Date(period.start_date);
+                    const endDate = new Date(period.end_date);
+                    const today = new Date();
+                    const isActive = period.is_active;
+                    const isUpcoming = today < startDate;
+                    const isExpired = today > endDate;
+                    
+                    let statusColor = '#999';
+                    let statusText = 'Не назначен';
+                    let statusEmoji = '⚪';
+                    
+                    if (period.status === 'completed') {
+                      statusColor = '#4CAF50';
+                      statusText = 'Завершен';
+                      statusEmoji = '✅';
+                    } else if (isActive) {
+                      statusColor = '#FF6B00';
+                      statusText = 'Активен';
+                      statusEmoji = '🔥';
+                    } else if (isUpcoming) {
+                      statusColor = '#2196F3';
+                      statusText = 'Ожидает';
+                      statusEmoji = '📅';
+                    } else if (isExpired) {
+                      statusColor = '#f44336';
+                      statusText = 'Просрочен';
+                      statusEmoji = '⚠️';
+                    }
+
+                    return (
+                      <tr key={period.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        <td style={{ padding: '12px', color: '#fff' }}>
+                          {period.first_name} {period.last_name}
+                        </td>
+                        <td style={{ padding: '12px', color: '#ccc' }}>
+                          {period.position || 'Сотрудник'}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', color: '#ccc', fontSize: '14px' }}>
+                          {startDate.toLocaleDateString('ru-RU')} - {endDate.toLocaleDateString('ru-RU')}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <span style={{ 
+                            color: statusColor, 
+                            fontWeight: '600',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            backgroundColor: `${statusColor}20`,
+                            fontSize: '13px'
+                          }}>
+                            {statusEmoji} {statusText}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          {isActive ? (
+                            <button 
+                              onClick={() => navigate('/manager-evaluation')}
+                              style={{
+                                padding: '6px 16px',
+                                backgroundColor: '#FF6B00',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              Оценить
+                            </button>
+                          ) : isUpcoming ? (
+                            <button 
+                              onClick={() => {
+                                if (window.confirm('Запросить ранний Performance Review у HR?')) {
+                                  alert('Функция в разработке');
+                                }
+                              }}
+                              style={{
+                                padding: '6px 16px',
+                                backgroundColor: 'transparent',
+                                color: '#2196F3',
+                                border: '1px solid #2196F3',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              Запросить ранний PR
+                            </button>
+                          ) : (
+                            <span style={{ color: '#666', fontSize: '13px' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="action-card clickable" onClick={() => navigate('/manager-evaluation')} style={{ cursor: 'pointer' }}>
-            <div className="action-title">Оценить сотрудников</div>
+        )}
+
+        {/* Управление командой */}
+        <div className="section-card" style={{ marginBottom: '30px' }}>
+          <h2 className="section-title">Управление командой</h2>
+          <div className="quick-actions">
+            <div className="action-card" onClick={() => navigate('/team')} style={{ borderLeftColor: '#FF6B00', cursor: 'pointer' }}>
+              <div className="action-title">Моя команда</div>
+            </div>
+            <div className="action-card" onClick={() => handleFilterAndScroll('submitted')} style={{ borderLeftColor: '#FF8533', cursor: 'pointer' }}>
+              <div className="action-title">Утверждение целей</div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/manager-evaluation')} style={{ borderLeftColor: '#FFA366', cursor: 'pointer' }}>
+              <div className="action-title">Оценка по целям</div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/potential-assessment')} style={{ borderLeftColor: '#FFB580', cursor: 'pointer' }}>
+              <div className="action-title">Оценка потенциала</div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/calculation-results')} style={{ borderLeftColor: '#4CAF50', cursor: 'pointer' }}>
+              <div className="action-title">Итоги оценки команды</div>
+            </div>
           </div>
-          <div className="action-card clickable" onClick={() => navigate('/potential-assessment')} style={{ cursor: 'pointer' }}>
-            <div className="action-title">Оценка потенциала</div>
-          </div>
-          <div className="action-card clickable" onClick={() => navigate('/team')} style={{ cursor: 'pointer' }}>
-            <div className="action-title">Моя команда</div>
-          </div>
-          <div className="action-card clickable" onClick={() => navigate('/self-assessment')} style={{ cursor: 'pointer', borderColor: '#2196f3' }}>
-            <div className="action-title">Моя самооценка</div>
-          </div>
-          <div className="action-card clickable" onClick={() => navigate('/peer-feedback')} style={{ cursor: 'pointer', borderColor: '#2196f3' }}>
-            <div className="action-title">Оценка коллег</div>
+        </div>
+
+        {/* Личное развитие */}
+        <div className="section-card" style={{ marginBottom: '30px' }}>
+          <h2 className="section-title">Личное развитие</h2>
+          <div className="quick-actions">
+            <div className="action-card" onClick={() => navigate('/employee')} style={{ borderLeftColor: '#FF6B00', cursor: 'pointer' }}>
+              <div className="action-title">Мои цели</div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/self-assessment')} style={{ borderLeftColor: '#4CAF50', cursor: 'pointer' }}>
+              <div className="action-title">Моя самооценка</div>
+            </div>
+            <div className="action-card" onClick={() => navigate('/peer-feedback')} style={{ borderLeftColor: '#2196F3', cursor: 'pointer' }}>
+              <div className="action-title">Запросить оценку</div>
+            </div>
           </div>
         </div>
 
@@ -261,18 +458,22 @@ const ManagerDashboard = ({ user, onLogout }) => {
 
           <div className="sidebar">
             <div className="section-card">
-              <h2 className="section-title">Действия требуют внимания</h2>
-              <div style={{ padding: '12px 0' }}>
-                <div style={{ padding: '12px', backgroundColor: 'rgba(255,107,0,0.1)', borderRadius: '8px', marginBottom: '12px' }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#FF6B00' }}>{pendingCount}</div>
-                  <div style={{ fontSize: '14px', color: '#999' }}>Целей на утверждении</div>
-                </div>
-                <div style={{ padding: '12px', backgroundColor: 'rgba(76,175,80,0.1)', borderRadius: '8px' }}>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4CAF50' }}>
-                    {teamGoals.filter(g => g.status === 'approved').length}
+              <h2 className="section-title">Уведомления</h2>
+              <div className="notifications-list">
+                {notifications.map(notif => (
+                  <div 
+                    key={notif.id} 
+                    className="notification-item"
+                    onClick={notif.action}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="notification-dot"></div>
+                    <div>
+                      <p className="notification-text">{notif.text}</p>
+                      <span className="notification-time">{notif.time}</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '14px', color: '#999' }}>Целей утверждено</div>
-                </div>
+                ))}
               </div>
             </div>
           </div>

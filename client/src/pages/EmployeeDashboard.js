@@ -10,6 +10,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   // const [stats, setStats] = useState(null); // Временно отключено
   const [loading, setLoading] = useState(true);
   const [pendingReviews, setPendingReviews] = useState([]);
+  const [rating, setRating] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -18,16 +19,19 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, statsData, cyclesData, reviewsData] = await Promise.all([
+      const [goalsData, /* statsData, */ cyclesData, reviewsData, ratingData] = await Promise.all([
         api.goals.getAll(),
-        api.dashboard.getStats(),
+        // api.dashboard.getStats(), // Временно отключено
         api.cycles.getAll(),
-        api.peerFeedback.getPendingReviews()
+        api.peerFeedback.getPendingReviews(),
+        api.employee.getMyRating()
       ]);
       setGoals(goalsData);
-      setStats(statsData);
+      // setStats(statsData); // Временно отключено
       setCycles(cyclesData);
       setPendingReviews(reviewsData);
+      setRating(ratingData);
+      console.log('📊 Загружен рейтинг:', ratingData);
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     } finally {
@@ -557,9 +561,20 @@ const EmployeeDashboard = ({ user, onLogout }) => {
             <div className="section-card">
               <h2 className="section-title">Мой рейтинг</h2>
               <div className="rating-display">
-                <div className="rating-score">8.5</div>
-                <div className="rating-label">Хороший результат</div>
-                <div className="rating-trend">↗ +0.5 с прошлого периода</div>
+                {rating ? (
+                  <>
+                    <div className="rating-score">{rating.score}</div>
+                    <div className="rating-label">{rating.label}</div>
+                    <div className="rating-trend">
+                      {rating.trend > 0 ? '↗' : rating.trend < 0 ? '↘' : '→'} 
+                      {' '}{rating.trend} с прошлого периода
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: '#999', padding: '20px' }}>
+                    Нет данных для отображения рейтинга
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -105,7 +105,7 @@ const Login = ({ onLogin }) => {
           <p className="quick-login-hint">💡 Кликните на карточку для автозаполнения формы</p>
           
           <div className="credentials-section">
-            <h4 className="role-header">👤 Администратор</h4>
+            <h4 className="role-header">👤 АДМИНИСТРАТОР</h4>
             <div className="credential-card" onClick={() => handleQuickLogin('admin@wink.ru')}>
               <div className="credential-name">Системный Администратор</div>
               <div className="credential-email">admin@wink.ru</div>

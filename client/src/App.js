@@ -11,6 +11,7 @@ import TeamPage from './pages/TeamPage';
 import ManagerEvaluation from './pages/ManagerEvaluation';
 import EmployeeDetails from './pages/EmployeeDetails';
 import PotentialAssessment from './pages/PotentialAssessment';
+import CalculationResults from './pages/CalculationResults';
 import './App.css';
 
 function App() {
@@ -98,6 +99,12 @@ function App() {
           <Route path="/potential-assessment" element={
             <ProtectedRoute allowedRoles={['manager']}>
               <PotentialAssessment user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/calculation-results/:employeeId?" element={
+            <ProtectedRoute allowedRoles={['hr', 'admin', 'manager']}>
+              <CalculationResults user={user} onLogout={handleLogout} />
             </ProtectedRoute>
           } />
           

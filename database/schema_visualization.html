@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WINK Performance Review - Database Schema</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #000000;
+            color: #ffffff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #FF6B00;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            text-align: center;
+            color: #aaaaaa;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: #1a1a1a;
+            padding: 20px 30px;
+            border-radius: 10px;
+            border: 2px solid #FF6B00;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 3em;
+            color: #FF6B00;
+            font-weight: bold;
+        }
+        .stat-label {
+            color: #cccccc;
+            margin-top: 5px;
+        }
+        .diagram-container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 40px;
+            overflow-x: auto;
+        }
+        .mermaid {
+            font-size: 18px;
+            min-height: 1200px;
+        }
+        .groups {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .group-card {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #FF6B00;
+        }
+        .group-card h3 {
+            color: #FF6B00;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        .group-card ul {
+            list-style: none;
+        }
+        .group-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid #333;
+            color: #cccccc;
+        }
+        .group-card li:last-child {
+            border-bottom: none;
+        }
+        .pipeline {
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .pipeline h2 {
+            color: #FF6B00;
+            margin-bottom: 20px;
+        }
+        .pipeline-step {
+            background: #2a2a2a;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 3px solid #FF6B00;
+        }
+        .pipeline-step h4 {
+            color: #FF6B00;
+            margin-bottom: 10px;
+        }
+        .pipeline-step p {
+            color: #cccccc;
+            line-height: 1.6;
+        }
+        .arrow {
+            text-align: center;
+            color: #FF6B00;
+            font-size: 2em;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WINK Performance Review</h1>
+        <div class="subtitle">База данных - Схема и Pipeline</div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">30</div>
+                <div class="stat-label">Таблиц</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">2</div>
+                <div class="stat-label">Представлений</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">9</div>
+                <div class="stat-label">Excel Sheets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">4</div>
+                <div class="stat-label">Функционала</div>
+            </div>
+        </div>
+
+        <div class="diagram-container">
+            <div class="mermaid">
+erDiagram
+    users ||--o{ review_cycles : "создает"
+    users ||--o{ tasks : "имеет задачи"
+    users ||--o{ employee_goals : "ставит цели"
+    users ||--o{ self_assessments : "самооценка"
+    users ||--o{ peer_reviews : "оценка 360"
+    users ||--o{ manager_reviews : "оценка менеджера"
+    users ||--o{ potential_assessments : "потенциал"
+    users ||--o{ final_reviews : "итоги"
+    
+    review_cycles ||--o{ employee_tasks : "содержит"
+    review_cycles ||--o{ employee_goals : "содержит"
+    review_cycles ||--o{ final_reviews : "содержит"
+    
+    tasks ||--o{ employee_tasks : "назначается"
+    employee_tasks ||--o{ selected_respondents : "респонденты"
+    
+    employee_goals ||--o{ goal_tasks : "подзадачи"
+    
+    potential_assessments ||--o{ potential_detail_answers : "ответы"
+    
+    recommendation_triggers ||--o{ employee_recommendations : "генерирует"
+    employee_recommendations ||--o{ development_plans : "создает IDP"
+            </div>
+        </div>
+
+        <div class="pipeline">
+            <h2>Pipeline данных</h2>
+            
+            <div class="pipeline-step">
+                <h4>Этап 0: Инициализация</h4>
+                <p><strong>HR</strong> создает цикл оценки → Распределяет задачи → <strong>Сотрудники</strong> получают 3 задачи → Выбирают респондентов для 360</p>
+            </div>
+            
+            <div class="arrow">↓</div>
+            
+            <div class="pipeline-step">
+                <h4>Функционал 1: Постановка целей</h4>
+                <p><strong>Сотрудник</strong> создает цель → Добавляет 3 подзадачи с дедлайнами → <strong>Руководитель</strong> согласовывает</p>
+            </div>
+            
+            <div class="arrow">↓</div>
+            
+            <div class="pipeline-step">
+                <h4>Функционал 2: Оценки</h4>
+                <p><strong>2.1:</strong> Сотрудник проходит самооценку (self_assessments)<br>
+                <strong>2.2:</strong> Коллеги оценивают сотрудника (peer_reviews)<br>
+                <strong>2.3:</strong> Руководитель оценивает сотрудника (manager_reviews)<br>
+                <strong>2.4:</strong> Руководитель оценивает потенциал → 9-box матрица (potential_assessments)</p>
+            </div>
+            
+            <div class="arrow">↓</div>
+            
+            <div class="pipeline-step">
+                <h4>Функционал 3: Расчет итогов</h4>
+                <p>Собираются все оценки → Рассчитывается <strong>total_score</strong> и <strong>rating (0-10)</strong> → 
+                Определяется <strong>rating_category</strong> (outstanding/good_result/low_result/no_result) → 
+                Сохраняется в <strong>final_reviews</strong></p>
+            </div>
+            
+            <div class="arrow">↓</div>
+            
+            <div class="pipeline-step">
+                <h4>Функционал 4: Рекомендации</h4>
+                <p>Система проверяет <strong>recommendation_triggers</strong> → Генерирует <strong>employee_recommendations</strong> 
+                (обучение, повышение, ротация) → Создается <strong>development_plan (IDP)</strong></p>
+            </div>
+        </div>
+
+        <h2 style="color: #FF6B00; margin-top: 40px; margin-bottom: 20px;">Группы таблиц</h2>
+        
+        <div class="groups">
+            <div class="group-card">
+                <h3>Управление</h3>
+                <ul>
+                    <li>users</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Циклы</h3>
+                <ul>
+                    <li>review_cycles</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Этап 0: Задачи</h3>
+                <ul>
+                    <li>tasks</li>
+                    <li>task_leads</li>
+                    <li>task_participants</li>
+                    <li>task_annotations</li>
+                    <li>employee_tasks</li>
+                    <li>selected_respondents</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Функционал 1: Цели</h3>
+                <ul>
+                    <li>employee_goals</li>
+                    <li>goal_tasks</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Шаблоны форм</h3>
+                <ul>
+                    <li>form_templates</li>
+                    <li>form_sections</li>
+                    <li>form_static_blocks</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>2.1 Самооценка</h3>
+                <ul>
+                    <li>self_assessment_questions</li>
+                    <li>self_assessments</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>2.2 Оценка коллег</h3>
+                <ul>
+                    <li>peer_review_questions</li>
+                    <li>peer_reviews</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>2.3 Оценка руководителя</h3>
+                <ul>
+                    <li>manager_review_questions</li>
+                    <li>manager_reviews</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>2.4 Потенциал</h3>
+                <ul>
+                    <li>potential_assessments</li>
+                    <li>potential_detail_questions</li>
+                    <li>potential_detail_answers</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Функционал 3: Итоги</h3>
+                <ul>
+                    <li>final_reviews</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Функционал 4: Рекомендации</h3>
+                <ul>
+                    <li>recommendation_triggers</li>
+                    <li>employee_recommendations</li>
+                    <li>development_plans</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Калибровка</h3>
+                <ul>
+                    <li>calibration_sessions</li>
+                    <li>calibration_participants</li>
+                    <li>calibration_adjustments</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Аудит</h3>
+                <ul>
+                    <li>audit_log</li>
+                </ul>
+            </div>
+            
+            <div class="group-card">
+                <h3>Представления</h3>
+                <ul>
+                    <li>v_employee_summary</li>
+                    <li>v_cycle_statistics</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'default',
+            themeVariables: {
+                primaryColor: '#FF6B00',
+                primaryTextColor: '#000',
+                primaryBorderColor: '#000',
+                lineColor: '#FF6B00',
+                secondaryColor: '#000',
+                tertiaryColor: '#fff'
+            },
+            er: {
+                fontSize: 20,
+                minEntityWidth: 150,
+                minEntityHeight: 80,
+                entityPadding: 20,
+                layoutDirection: 'TB'
+            }
+        });
+    </script>
+</body>
+</html>

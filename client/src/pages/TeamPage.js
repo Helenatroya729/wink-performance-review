@@ -27,8 +27,8 @@ const TeamPage = ({ user, onLogout }) => {
       
       let team;
       if (user.role === 'manager') {
-        // Для менеджера показываем только его команду
-        team = users.filter(u => u.manager_id === user.id);
+        // Для менеджера показываем только его команду (исключая самого себя)
+        team = users.filter(u => u.manager_id === user.id && u.id !== user.id);
       } else {
         // Для HR и admin показываем всех сотрудников и менеджеров
         team = users.filter(u => u.role === 'employee' || u.role === 'manager');
