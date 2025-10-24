@@ -1388,12 +1388,12 @@ app.get('/api/potential-assessment/employee/:employeeId', authenticateToken, asy
 // Получить мой рейтинг (для текущего пользователя)
 app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id; // Исправлено: было req.user.userId
     
     console.log('🔍 Запрос рейтинга для пользователя ID:', userId);
 
     // Получаем информацию о пользователе
-    const userResult = await pool.query(
+    const userResult = await query(
       'SELECT id, first_name, last_name, role FROM users WHERE id = $1',
       [userId]
     );
@@ -1404,64 +1404,16 @@ app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Самооценка
-    const selfAssessmentResult = await pool.query(
-      `SELECT competencies_score, achievements_score, goals_completion_score, ole_priorities_score 
-       FROM self_assessments 
-       WHERE user_id = $1 
+    // Получаем оценку от менеджера
+    const managerEvalResult = await query(
+      `SELECT performance_total FROM manager_evaluations 
+       WHERE employee_id = $1 
        ORDER BY created_at DESC 
        LIMIT 1`,
       [userId]
     );
 
-    let selfScore = 0;
-    if (selfAssessmentResult.rows.length > 0) {
-      const sa = selfAssessmentResult.rows[0];
-      selfScore = ((sa.competencies_score || 0) + (sa.achievements_score || 0) + 
-                   (sa.goals_completion_score || 0) + (sa.ole_priorities_score || 0)) / 4;
-    }
-
-    // Оценка от коллег (peer reviews)
-    const peerReviewsResult = await pool.query(
-      `SELECT AVG((collaboration_score + quality_score + leadership_score + innovation_score) / 4.0) as avg_score
-       FROM peer_feedback 
-       WHERE reviewee_id = $1 AND status = 'completed'`,
-      [userId]
-    );
-
-    const peerScore = peerReviewsResult.rows[0]?.avg_score || 0;
-
-    // Оценка от менеджера (только для не-руководителей)
-    let managerScore = 0;
-    if (user.role !== 'manager') {
-      const managerEvalResult = await pool.query(
-        `SELECT performance_total FROM manager_evaluations 
-         WHERE employee_id = $1 
-         ORDER BY created_at DESC 
-         LIMIT 1`,
-        [userId]
-      );
-      managerScore = managerEvalResult.rows[0]?.performance_total || 0;
-    }
-
-    // Рассчитываем общий рейтинг
-    let totalScore = 0;
-    let scoreCount = 0;
-
-    if (selfScore > 0) {
-      totalScore += selfScore;
-      scoreCount++;
-    }
-    if (peerScore > 0) {
-      totalScore += parseFloat(peerScore);
-      scoreCount++;
-    }
-    if (managerScore > 0) {
-      totalScore += managerScore;
-      scoreCount++;
-    }
-
-    totalScore = scoreCount > 0 ? (totalScore / scoreCount) : 0;
+    const totalScore = managerEvalResult.rows[0]?.performance_total || 0;
 
     // Определяем категорию рейтинга
     let ratingLabel = 'Нет данных';
@@ -1489,11 +1441,9 @@ app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
     res.json({
       score: parseFloat(totalScore.toFixed(1)),
       label: ratingLabel,
-      trend: trend > 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1),
+      trend: parseFloat(trend.toFixed(1)),
       components: {
-        selfScore: parseFloat(selfScore.toFixed(1)),
-        peerScore: parseFloat(peerScore.toFixed(1)),
-        managerScore: parseFloat(managerScore.toFixed(1))
+        managerScore: parseFloat(totalScore.toFixed(1))
       }
     });
 
@@ -2061,6 +2011,22 @@ app.post('/api/notifications/:id/read', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Ошибка отметки уведомления:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Получить циклы оценки
+app.get('/api/review-periods', async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT id, name, start_date, end_date, is_active, created_at
+      FROM review_periods
+      ORDER BY start_date DESC
+    `);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения циклов оценки:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
