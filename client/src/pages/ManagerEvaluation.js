@@ -115,35 +115,49 @@ const ManagerEvaluation = ({ user, onLogout }) => {
 
     setIsGeneratingAI(true);
     try {
+      // Формируем массив целей (пока одна цель, но структура готова для multi-goal)
+      const goals = [{
+        goal_title: currentGoal.title,
+        goal_description: currentGoal.description,
+        result_achievement_rating: evaluationForm.result_achievement_rating,
+        personal_qualities_comment: evaluationForm.personal_qualities_comment,
+        personal_contribution_comment: evaluationForm.personal_contribution_comment,
+        interaction_quality_rating: evaluationForm.interaction_quality_rating,
+        improvement_suggestions: evaluationForm.improvement_suggestions,
+        overall_rating: evaluationForm.overall_rating
+      }];
+
+      // Анонимизируем отзывы коллег (убираем имена, оставляем только должность и текст)
+      const anonymizedPeerReviews = (peerReviews || []).map((r, index) => ({
+        author: `Коллега ${index + 1}`,
+        position: r.reviewer_position || 'Не указана',
+        technical_skills: r.technical_skills,
+        communication: r.communication,
+        teamwork: r.teamwork,
+        problem_solving: r.problem_solving,
+        initiative: r.initiative,
+        strengths: r.strengths,
+        areas_for_improvement: r.areas_for_improvement,
+        additional_comments: r.additional_comments
+      }));
+
+      const requestBody = {
+        employee_name: selectedEmployee.first_name + ' ' + selectedEmployee.last_name,
+        goals: goals,
+        peer_reviews_general: anonymizedPeerReviews,
+        manager_comments: evaluationForm.personal_contribution_comment || '',
+        self_assessment: '' // Можно добавить, если есть доступ к самооценке
+      };
+
+      // Логируем для отладки (можно убрать в продакшене)
+      console.log('Отправка к ИИ сервису:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch('http://localhost:8000/api/manager-summarize', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          employee_name: selectedEmployee.first_name + ' ' + selectedEmployee.last_name,
-          goal_title: currentGoal.title,
-          goal_description: currentGoal.description,
-          result_achievement_rating: evaluationForm.result_achievement_rating,
-          personal_qualities_comment: evaluationForm.personal_qualities_comment,
-          personal_contribution_comment: evaluationForm.personal_contribution_comment,
-          interaction_quality_rating: evaluationForm.interaction_quality_rating,
-          improvement_suggestions: evaluationForm.improvement_suggestions,
-          overall_rating: evaluationForm.overall_rating,
-          peer_reviews: (peerReviews || []).map(r => ({
-            reviewer_name: `${r.reviewer_first_name || ''} ${r.reviewer_last_name || ''}`.trim(),
-            reviewer_position: r.reviewer_position,
-            technical_skills: r.technical_skills,
-            communication: r.communication,
-            teamwork: r.teamwork,
-            problem_solving: r.problem_solving,
-            initiative: r.initiative,
-            strengths: r.strengths,
-            areas_for_improvement: r.areas_for_improvement,
-            additional_comments: r.additional_comments,
-            created_at: r.created_at
-          }))
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
