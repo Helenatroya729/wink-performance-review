@@ -11,6 +11,12 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [rating, setRating] = useState(null);
+  const [employeePeriods, setEmployeePeriods] = useState([]);
+  const [prStatuses, setPrStatuses] = useState([]);
+  const [showEarlyRequestModal, setShowEarlyRequestModal] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState(null);
+  const [earlyRequestComment, setEarlyRequestComment] = useState('');
+  const [recommendations, setRecommendations] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -19,19 +25,34 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, /* statsData, */ cyclesData, reviewsData, ratingData] = await Promise.all([
+      const [goalsData, /* statsData, */ cyclesData, reviewsData, ratingData, periodsData, prStatusData] = await Promise.all([
         api.goals.getAll(),
         // api.dashboard.getStats(), // Временно отключено
         api.cycles.getAll(),
         api.peerFeedback.getPendingReviews(),
-        api.employee.getMyRating()
+        api.employee.getMyRating(),
+        api.employeeReviewPeriods.get(),
+        api.performanceReview.getStatus()
       ]);
       setGoals(goalsData);
       // setStats(statsData); // Временно отключено
       setCycles(cyclesData);
       setPendingReviews(reviewsData);
       setRating(ratingData);
+      setEmployeePeriods(periodsData);
+      setPrStatuses(prStatusData);
       console.log('📊 Загружен рейтинг:', ratingData);
+      console.log('📅 Индивидуальные периоды:', periodsData);
+      console.log('🔄 Статусы PR:', prStatusData);
+      
+      // Загружаем рекомендации
+      try {
+        const recommendationsData = await api.get('/employee/my-recommendations');
+        setRecommendations(recommendationsData);
+        console.log('📝 Загружены рекомендации:', recommendationsData);
+      } catch (error) {
+        console.log('ℹ️ Рекомендации пока не получены');
+      }
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     } finally {
@@ -53,13 +74,26 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackGoal, setFeedbackGoal] = useState(null);
 
-  const handleCreateGoal = async (e) => {
+  const handleCreateGoal = async (e, resubmit = false) => {
     e.preventDefault();
     try {
       if (editingGoal) {
         // Обновление существующей цели
-        await api.goals.update(editingGoal.id, newGoal);
-        alert('Цель успешно обновлена!');
+        const updateData = { ...newGoal };
+        
+        // Если цель была отклонена и нажата кнопка повторной отправки,
+        // меняем статус на 'submitted'
+        if (resubmit && editingGoal.status === 'rejected') {
+          updateData.status = 'submitted';
+        }
+        
+        await api.goals.update(editingGoal.id, updateData);
+        
+        if (resubmit && editingGoal.status === 'rejected') {
+          alert('Цель успешно отправлена на повторное утверждение!');
+        } else {
+          alert('Цель успешно обновлена!');
+        }
       } else {
         // Создание новой цели
         await api.goals.create(newGoal);
@@ -134,15 +168,64 @@ const EmployeeDashboard = ({ user, onLogout }) => {
       alert('Цель удалена');
       loadData();
     } catch (error) {
-      alert('Ошибка при удалении: ' + error.message);
+      alert('Ошибка: ' + error.message);
     }
+  };
+
+  // Запрос досрочного начала Performance Review
+  const handleRequestEarlyPR = (period) => {
+    setSelectedPeriod(period);
+    setShowEarlyRequestModal(true);
+  };
+
+  const handleSubmitEarlyRequest = async () => {
+    if (!earlyRequestComment.trim()) {
+      alert('Пожалуйста, укажите причину досрочного запроса');
+      return;
+    }
+
+    try {
+      await api.performanceReview.requestEarly(selectedPeriod.id, earlyRequestComment);
+      alert('Запрос отправлен! Ожидайте одобрения от руководителя и HR.');
+      setShowEarlyRequestModal(false);
+      setEarlyRequestComment('');
+      setSelectedPeriod(null);
+      loadData();
+    } catch (error) {
+      alert('Ошибка: ' + error.message);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    const statusMap = {
+      not_started: { text: 'Не начат', color: '#9CA3AF', bg: '#F3F4F6' },
+      pending_approval: { text: 'Ожидает одобрения', color: '#FF6B00', bg: '#FFE5D9' },
+      manager_approved: { text: 'Одобрено руководителем', color: '#FF8533', bg: '#FFF0E6' },
+      available: { text: 'Доступен', color: '#16A34A', bg: '#DCFCE7' },
+      in_progress: { text: 'В процессе', color: '#FF6B00', bg: '#FFF4ED' },
+      submitted: { text: 'Отправлен', color: '#FFA366', bg: '#FFF7F0' },
+      completed: { text: 'Завершен', color: '#059669', bg: '#D1FAE5' }
+    };
+    const badge = statusMap[status] || { text: status, color: '#9CA3AF', bg: '#F3F4F6' };
+    return (
+      <span style={{ 
+        padding: '4px 12px', 
+        borderRadius: '12px', 
+        backgroundColor: badge.bg,
+        color: badge.color,
+        fontSize: '12px',
+        fontWeight: '600'
+      }}>
+        {badge.text}
+      </span>
+    );
   };
 
   const quickActions = [
     { id: 1, title: 'Создать цели', icon: '', color: '#FF6B00', action: () => setShowGoalForm(true) },
     { id: 2, title: 'Самооценка', icon: '', color: '#FF8533', action: () => navigate('/self-assessment') },
     { id: 3, title: 'Запросить оценку', icon: '', color: '#FFA366', action: () => navigate('/peer-feedback') },
-    { id: 4, title: 'План развития', icon: '', color: '#FFB580', action: () => alert('Функция в разработке') }
+    { id: 4, title: 'План развития', icon: '', color: '#FFB580', action: () => navigate('/development-plan') }
   ];
 
   // Формируем уведомления на основе реальных данных
@@ -170,13 +253,31 @@ const EmployeeDashboard = ({ user, onLogout }) => {
     });
   }
   
-  // Добавляем напоминание о самооценке
-  notifications.push({
-    id: 3,
-    text: 'Напоминание: завершить самооценку до 25 октября',
-    time: '3 дня назад',
-    action: () => navigate('/self-assessment')
+  // Добавляем уведомление о доступности Performance Review
+  const availablePeriod = employeePeriods.find((period, index) => {
+    const prStatus = prStatuses[index];
+    return prStatus?.status === 'available' && prStatus?.is_in_last_month;
   });
+  
+  if (availablePeriod) {
+    notifications.push({
+      id: 3,
+      text: `Начался период Performance Review: ${availablePeriod.name}`,
+      time: 'Сегодня',
+      action: () => navigate('/self-assessment')
+    });
+  }
+  
+  // Добавляем уведомление об одобрении досрочного запроса
+  const approvedRequest = prStatuses.find(s => s.status === 'available' && s.manager_approved_date);
+  if (approvedRequest) {
+    notifications.push({
+      id: 4,
+      text: 'Ваш запрос на досрочное начало Performance Review одобрен',
+      time: new Date(approvedRequest.hr_approved_date || approvedRequest.manager_approved_date).toLocaleDateString(),
+      action: () => navigate('/self-assessment')
+    });
+  }
 
   const getStatusLabel = (status) => {
     const labels = {
@@ -334,19 +435,50 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                 </div>
 
                 <div className="modal-buttons">
-                  <button type="submit" className="btn-primary">
-                    {editingGoal ? 'Сохранить изменения' : 'Создать цель'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn-secondary" 
-                    onClick={() => {
-                      setShowGoalForm(false);
-                      setEditingGoal(null);
-                    }}
-                  >
-                    Отмена
-                  </button>
+                  {editingGoal && editingGoal.status === 'rejected' ? (
+                    <>
+                      <button 
+                        type="button" 
+                        className="btn-primary"
+                        onClick={(e) => handleCreateGoal(e, true)}
+                      >
+                        Отправить на утверждение повторно
+                      </button>
+                      <button 
+                        type="submit" 
+                        className="btn-secondary"
+                        style={{ backgroundColor: '#6b7280' }}
+                      >
+                        Только сохранить изменения
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        onClick={() => {
+                          setShowGoalForm(false);
+                          setEditingGoal(null);
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="submit" className="btn-primary">
+                        {editingGoal ? 'Сохранить изменения' : 'Создать цель'}
+                      </button>
+                      <button 
+                        type="button" 
+                        className="btn-secondary" 
+                        onClick={() => {
+                          setShowGoalForm(false);
+                          setEditingGoal(null);
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    </>
+                  )}
                 </div>
               </form>
             </div>
@@ -409,6 +541,181 @@ const EmployeeDashboard = ({ user, onLogout }) => {
 
         <div className="content-grid">
           <div className="main-content">
+            {/* Индивидуальные периоды оценки */}
+            <div className="section-card" style={{ marginBottom: '24px' }}>
+              <h2 className="section-title">Мои периоды Performance Review</h2>
+              {loading ? (
+                <div style={{ padding: '20px', textAlign: 'center' }}>Загрузка...</div>
+              ) : employeePeriods.length > 0 ? (
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {employeePeriods
+                    .filter(period => {
+                      // Показываем только текущий период (где текущая дата находится между start и end)
+                      const now = new Date();
+                      const start = new Date(period.start_date);
+                      const end = new Date(period.end_date);
+                      return now >= start && now <= end;
+                    })
+                    .map((period, index) => {
+                    const prStatus = prStatuses.find(s => s.period_id === period.id);
+                    const statusText = prStatus?.status || 'not_started';
+                    const isAvailable = statusText === 'available' || prStatus?.is_in_last_month;
+                    const canRequest = prStatus?.can_request_early;
+                    
+                    return (
+                      <div 
+                        key={period.id} 
+                        style={{
+                          padding: '24px',
+                          border: '2px solid #FF6B00',
+                          borderRadius: '12px',
+                          backgroundColor: '#2D2D2D',
+                          borderLeft: `6px solid ${isAvailable ? '#FF6B00' : '#FFA366'}`,
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                          transition: 'all 0.3s ease',
+                          color: '#FFFFFF'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <h3 style={{ margin: 0, fontSize: '18px', color: '#FFFFFF' }}>
+                            {period.name}
+                          </h3>
+                          {getStatusBadge(statusText)}
+                        </div>
+                        
+                        <div style={{ color: '#B0B0B0', fontSize: '14px', marginBottom: '8px' }}>
+                          Период: {new Date(period.start_date).toLocaleDateString('ru-RU')} - {new Date(period.end_date).toLocaleDateString('ru-RU')}
+                        </div>
+                        
+                        {prStatus?.is_in_last_month && (
+                          <div style={{ color: '#4ADE80', fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
+                            Последний месяц периода - можно начать Performance Review!
+                          </div>
+                        )}
+                        
+                        {statusText === 'pending_approval' && (
+                          <div style={{ color: '#FFA366', fontSize: '14px', marginTop: '8px' }}>
+                            Запрос отправлен {new Date(prStatus.early_request_date).toLocaleDateString('ru-RU')}
+                            <br />
+                            Комментарий: {prStatus.early_request_comment}
+                          </div>
+                        )}
+                        
+                        {statusText === 'manager_approved' && (
+                          <div style={{ color: '#60A5FA', fontSize: '14px', marginTop: '8px' }}>
+                            Руководитель одобрил - ожидается одобрение HR
+                          </div>
+                        )}
+                        
+                        {isAvailable && (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              style={{ 
+                                fontSize: '14px', 
+                                padding: '10px 20px',
+                                backgroundColor: '#FF6B00',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontWeight: '600',
+                                transition: 'all 0.2s',
+                                width: '100%'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.target.style.backgroundColor = '#FF8533';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.backgroundColor = '#FF6B00';
+                              }}
+                              onClick={() => navigate('/self-assessment')}
+                            >
+                              Начать Performance Review
+                            </button>
+                          </div>
+                        )}
+                        
+                        {canRequest && (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              style={{ 
+                                fontSize: '14px', 
+                                padding: '10px 20px',
+                                backgroundColor: '#FF6B00',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: 'pointer',
+                                fontWeight: '600',
+                                transition: 'all 0.2s',
+                                width: '100%'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.target.style.backgroundColor = '#FF8533';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.backgroundColor = '#FF6B00';
+                              }}
+                              onClick={() => handleRequestEarlyPR(period)}
+                            >
+                              Запросить досрочное начало Performance Review
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ color: '#999', padding: '20px' }}>
+                  Нет назначенных периодов оценки
+                </div>
+              )}
+            </div>
+
+            {/* Модальное окно запроса досрочного начала */}
+            {showEarlyRequestModal && selectedPeriod && (
+              <div className="modal-overlay" onClick={() => setShowEarlyRequestModal(false)}>
+                <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                  <h2>Запросить досрочное начало Performance Review</h2>
+                  <p style={{ color: '#666', marginBottom: '20px' }}>
+                    Период: <strong>{selectedPeriod.name}</strong><br />
+                    {new Date(selectedPeriod.start_date).toLocaleDateString('ru-RU')} - {new Date(selectedPeriod.end_date).toLocaleDateString('ru-RU')}
+                  </p>
+                  
+                  <div className="form-group">
+                    <label>Причина досрочного запроса *</label>
+                    <textarea
+                      value={earlyRequestComment}
+                      onChange={(e) => setEarlyRequestComment(e.target.value)}
+                      placeholder="Например: Все цели полугодия выполнены досрочно, готов к оценке..."
+                      rows="4"
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  
+                  <div className="modal-buttons">
+                    <button
+                      className="btn-primary"
+                      onClick={handleSubmitEarlyRequest}
+                    >
+                      Отправить запрос
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => {
+                        setShowEarlyRequestModal(false);
+                        setEarlyRequestComment('');
+                        setSelectedPeriod(null);
+                      }}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="section-card">
               <h2 className="section-title">Мои цели на период</h2>
               {loading ? (

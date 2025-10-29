@@ -10,10 +10,12 @@ const ManagerEvaluation = ({ user, onLogout }) => {
   const [employees, setEmployees] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [peerReviews, setPeerReviews] = useState([]);
   const [selectedCycle, setSelectedCycle] = useState('');
   const [employeeGoals, setEmployeeGoals] = useState([]);
   const [showEvaluationForm, setShowEvaluationForm] = useState(false);
   const [currentGoal, setCurrentGoal] = useState(null);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   
   const [evaluationForm, setEvaluationForm] = useState({
     goal_id: '',
@@ -58,6 +60,15 @@ const ManagerEvaluation = ({ user, onLogout }) => {
     if (selectedCycle) {
       await loadEmployeeGoals(employee.id, selectedCycle);
     }
+
+    // Загружаем оценки от коллег для выбранного сотрудника (если у менеджера есть доступ)
+    try {
+      const reviews = await api.peerFeedback.getByEmployee(employee.id);
+      setPeerReviews(reviews);
+    } catch (err) {
+      console.warn('Не удалось загрузить оценки от коллег для сотрудника:', err.message);
+      setPeerReviews([]);
+    }
   };
 
   const handleCycleSelect = async (cycleId) => {
@@ -94,6 +105,65 @@ const ManagerEvaluation = ({ user, onLogout }) => {
       overall_rating: 5
     });
     setShowEvaluationForm(true);
+  };
+
+  const handleGenerateAISummary = async () => {
+    if (!evaluationForm.personal_qualities_comment && !evaluationForm.personal_contribution_comment && !evaluationForm.improvement_suggestions) {
+      alert('Пожалуйста, заполните хотя бы одно поле с комментариями перед генерацией резюме');
+      return;
+    }
+
+    setIsGeneratingAI(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/manager-summarize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employee_name: selectedEmployee.first_name + ' ' + selectedEmployee.last_name,
+          goal_title: currentGoal.title,
+          goal_description: currentGoal.description,
+          result_achievement_rating: evaluationForm.result_achievement_rating,
+          personal_qualities_comment: evaluationForm.personal_qualities_comment,
+          personal_contribution_comment: evaluationForm.personal_contribution_comment,
+          interaction_quality_rating: evaluationForm.interaction_quality_rating,
+          improvement_suggestions: evaluationForm.improvement_suggestions,
+          overall_rating: evaluationForm.overall_rating,
+          peer_reviews: (peerReviews || []).map(r => ({
+            reviewer_name: `${r.reviewer_first_name || ''} ${r.reviewer_last_name || ''}`.trim(),
+            reviewer_position: r.reviewer_position,
+            technical_skills: r.technical_skills,
+            communication: r.communication,
+            teamwork: r.teamwork,
+            problem_solving: r.problem_solving,
+            initiative: r.initiative,
+            strengths: r.strengths,
+            areas_for_improvement: r.areas_for_improvement,
+            additional_comments: r.additional_comments,
+            created_at: r.created_at
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Ошибка при обращении к ИИ сервису');
+      }
+
+      const data = await response.json();
+      
+      // Обновляем поле feedback_summary сгенерированным резюме
+      setEvaluationForm({
+        ...evaluationForm,
+        feedback_summary: data.summary || data.feedback_summary || 'Не удалось сгенерировать резюме'
+      });
+
+    } catch (error) {
+      console.error('Ошибка генерации резюме:', error);
+      alert('Ошибка при генерации резюме с помощью ИИ: ' + error.message);
+    } finally {
+      setIsGeneratingAI(false);
+    }
   };
 
   const handleSubmitEvaluation = async (e) => {
@@ -584,22 +654,24 @@ const ManagerEvaluation = ({ user, onLogout }) => {
                   </label>
                   <button
                     type="button"
-                    onClick={() => alert('Функция генерации с помощью ИИ будет доступна в следующей версии')}
+                    onClick={handleGenerateAISummary}
+                    disabled={isGeneratingAI}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: 'var(--wink-orange)',
+                      backgroundColor: isGeneratingAI ? '#666' : 'var(--wink-orange)',
                       color: 'white',
                       border: 'none',
                       borderRadius: '6px',
-                      cursor: 'pointer',
+                      cursor: isGeneratingAI ? 'not-allowed' : 'pointer',
                       fontSize: '13px',
                       fontWeight: '600',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px'
+                      gap: '6px',
+                      opacity: isGeneratingAI ? 0.7 : 1
                     }}
                   >
-                    <span>🤖</span> Помощь ИИ
+                    <span>{isGeneratingAI ? '⏳' : '🤖'}</span> {isGeneratingAI ? 'Генерация...' : 'Помощь ИИ'}
                   </button>
                 </div>
                 <p style={{ 

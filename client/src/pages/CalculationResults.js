@@ -13,6 +13,15 @@ const CalculationResults = ({ user, onLogout }) => {
   const [summaryText, setSummaryText] = useState('');
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
+  
+  // Два отдельных блока рекомендаций
+  const [employeeRecommendations, setEmployeeRecommendations] = useState({
+    achievements: '',
+    improvements: '',
+    developmentPlan: ''
+  });
+  const [managerRecommendations, setManagerRecommendations] = useState('');
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
 
   useEffect(() => {
     if (user.role === 'hr' || user.role === 'admin' || user.role === 'manager') {
@@ -52,6 +61,22 @@ const CalculationResults = ({ user, onLogout }) => {
       
       // Загружаем результаты оценки для выбранного сотрудника
       const data = await api.get(`/employee/calculation-results/${empId}`);
+      
+      // Загружаем детальные данные для AI (все комментарии и оценки)
+      try {
+        const detailedData = await api.get(`/hr/employee/${empId}/details`);
+        data.details = {
+          selfAssessment: detailedData.evaluations?.selfAssessment || [],
+          managerEvaluation: detailedData.evaluations?.managerEvaluation || null,
+          peerReviews: detailedData.evaluations?.peerReviews || [],
+          potentialAssessment: detailedData.evaluations?.potentialAssessment || null
+        };
+        console.log('✅ Загружены детальные данные для AI:', data.details);
+      } catch (detailError) {
+        console.warn('⚠️ Не удалось загрузить детальные данные:', detailError);
+        data.details = {};
+      }
+      
       setResults(data);
       
       // Загружаем инструкции (если они есть)
@@ -73,6 +98,188 @@ const CalculationResults = ({ user, onLogout }) => {
     } catch (error) {
       console.error('Ошибка сохранения итогов:', error);
       alert('Ошибка при сохранении');
+    }
+  };
+
+  const sendEmployeeRecommendations = async () => {
+    if (!employeeRecommendations.achievements.trim() || 
+        !employeeRecommendations.improvements.trim() || 
+        !employeeRecommendations.developmentPlan.trim()) {
+      alert('Пожалуйста, заполните все поля рекомендаций для сотрудника');
+      return;
+    }
+
+    try {
+      await api.post(`/hr/send-employee-recommendations/${selectedEmployeeId}`, {
+        achievements: employeeRecommendations.achievements,
+        improvements: employeeRecommendations.improvements,
+        developmentPlan: employeeRecommendations.developmentPlan
+      });
+      alert('Рекомендации успешно отправлены сотруднику!');
+    } catch (error) {
+      console.error('Ошибка отправки рекомендаций сотруднику:', error);
+      alert('Ошибка при отправке рекомендаций');
+    }
+  };
+
+  const sendManagerRecommendations = async () => {
+    if (!managerRecommendations.trim()) {
+      alert('Пожалуйста, заполните управленческие рекомендации');
+      return;
+    }
+
+    try {
+      await api.post(`/hr/send-manager-recommendations/${selectedEmployeeId}`, {
+        recommendations: managerRecommendations
+      });
+      alert('Управленческие рекомендации успешно отправлены руководителю!');
+    } catch (error) {
+      console.error('Ошибка отправки рекомендаций руководителю:', error);
+      alert('Ошибка при отправке рекомендаций');
+    }
+  };
+
+  // Генерация рекомендаций для сотрудника с помощью AI
+  const generateEmployeeRecommendationsAI = async () => {
+    if (!results) {
+      alert('Данные сотрудника еще не загружены');
+      return;
+    }
+
+    setIsLoadingAI(true);
+    try {
+      // Подготавливаем детальные данные для отправки в AI микросервис
+      const aiRequestData = {
+        employee_name: results.employee.name,
+        position: results.employee.position || results.employee.role,
+        
+        // Баллы
+        self_score: results.scores.selfScore,
+        manager_score: results.scores.managerScore,
+        peer_score: results.scores.peerScore,
+        total_score: results.scores.totalScore,
+        evaluation_status: results.employee.evaluationStatus,
+        
+        // Детальная самооценка - все ответы и комментарии
+        self_assessment: results.details?.selfAssessment || [],
+        
+        // Оценка руководителя - комментарии и детали
+        manager_evaluation: results.details?.managerEvaluation ? {
+          performance_total: results.details.managerEvaluation.performance_total,
+          professional_qualities_score: results.details.managerEvaluation.professional_qualities_score,
+          personal_qualities_score: results.details.managerEvaluation.personal_qualities_score,
+          comments: results.details.managerEvaluation.comments,
+          manager_name: results.details.managerEvaluation.manager_name
+        } : null,
+        
+        // Все оценки коллег - комментарии от каждого
+        peer_reviews: results.details?.peerReviews || [],
+        
+        // Оценка потенциала (9-Box)
+        potential_assessment: results.details?.potentialAssessment || null
+      };
+
+      console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис:', aiRequestData);
+
+      // Отправляем запрос в AI микросервис
+      const response = await fetch('http://localhost:8000/api/results-and-plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(aiRequestData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI микросервис вернул ошибку: ${response.status}`);
+      }
+
+      const aiResponse = await response.json();
+      console.log('✅ Ответ от AI микросервиса:', aiResponse);
+
+      // Парсим ответ и заполняем поля
+      setEmployeeRecommendations({
+        achievements: aiResponse.achievements || aiResponse.key_achievements || '',
+        improvements: aiResponse.improvements || aiResponse.areas_for_improvement || '',
+        developmentPlan: aiResponse.development_plan || aiResponse.plan || ''
+      });
+
+      alert('✨ Рекомендации успешно сгенерированы с помощью AI!');
+    } catch (error) {
+      console.error('❌ Ошибка генерации рекомендаций AI:', error);
+      alert('Ошибка при генерации рекомендаций AI.\nПроверьте, что AI микросервис запущен на http://localhost:8000\n\nОшибка: ' + error.message);
+    } finally {
+      setIsLoadingAI(false);
+    }
+  };
+
+  // Генерация управленческих рекомендаций с помощью AI
+  const generateManagerRecommendationsAI = async () => {
+    if (!results) {
+      alert('Данные сотрудника еще не загружены');
+      return;
+    }
+
+    setIsLoadingAI(true);
+    try {
+      // Подготавливаем детальные данные для отправки в AI микросервис
+      const aiRequestData = {
+        employee_name: results.employee.name,
+        position: results.employee.position || results.employee.role,
+        
+        // Баллы
+        self_score: results.scores.selfScore,
+        manager_score: results.scores.managerScore,
+        peer_score: results.scores.peerScore,
+        total_score: results.scores.totalScore,
+        evaluation_status: results.employee.evaluationStatus,
+        
+        // Детальная самооценка - все ответы и комментарии
+        self_assessment: results.details?.selfAssessment || [],
+        
+        // Оценка руководителя - комментарии и детали
+        manager_evaluation: results.details?.managerEvaluation ? {
+          performance_total: results.details.managerEvaluation.performance_total,
+          professional_qualities_score: results.details.managerEvaluation.professional_qualities_score,
+          personal_qualities_score: results.details.managerEvaluation.personal_qualities_score,
+          comments: results.details.managerEvaluation.comments,
+          manager_name: results.details.managerEvaluation.manager_name
+        } : null,
+        
+        // Все оценки коллег - комментарии от каждого
+        peer_reviews: results.details?.peerReviews || [],
+        
+        // Оценка потенциала (9-Box)
+        potential_assessment: results.details?.potentialAssessment || null
+      };
+
+      console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис для управленческих рекомендаций:', aiRequestData);
+
+      // Отправляем запрос в AI микросервис
+      const response = await fetch('http://localhost:8000/api/steps-of-manager', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(aiRequestData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`AI микросервис вернул ошибку: ${response.status}`);
+      }
+
+      const aiResponse = await response.json();
+      console.log('✅ Ответ от AI микросервиса (управленческие рекомендации):', aiResponse);
+
+      // Парсим ответ и заполняем поле
+      setManagerRecommendations(aiResponse.recommendations || aiResponse.manager_steps || aiResponse.steps || '');
+
+      alert('✨ Управленческие рекомендации успешно сгенерированы с помощью AI!');
+    } catch (error) {
+      console.error('❌ Ошибка генерации управленческих рекомендаций AI:', error);
+      alert('Ошибка при генерации управленческих рекомендаций AI.\nПроверьте, что AI микросервис запущен на http://localhost:8000\n\nОшибка: ' + error.message);
+    } finally {
+      setIsLoadingAI(false);
     }
   };
 
@@ -299,31 +506,266 @@ const CalculationResults = ({ user, onLogout }) => {
           </div>
         </div>
 
-        {/* Блок "Подведение итогов" */}
+        {/* Блок "Рекомендации для сотрудника" */}
         <div className="section-card" style={{ marginBottom: '25px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <h2 style={{ color: '#FF6B00', margin: 0, fontSize: '20px' }}>
-              Подведение итогов
+              Рекомендации для сотрудника
             </h2>
             <button
-              onClick={() => alert('Функция генерации итогов с помощью ИИ будет доступна в следующей версии.\n\nИИ проанализирует все оценки и сгенерирует персонализированное резюме с рекомендациями по развитию.')}
+              onClick={generateEmployeeRecommendationsAI}
+              disabled={isLoadingAI}
               style={{
                 padding: '8px 16px',
-                backgroundColor: '#4CAF50',
+                backgroundColor: isLoadingAI ? '#666' : '#4CAF50',
                 color: 'white',
                 border: 'none',
                 borderRadius: '6px',
-                cursor: 'pointer',
+                cursor: isLoadingAI ? 'not-allowed' : 'pointer',
                 fontSize: '13px',
                 fontWeight: '600',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                opacity: isLoadingAI ? 0.7 : 1
               }}
             >
-              <span>🤖</span> Помощь ИИ
+              <span>{isLoadingAI ? '⏳' : '🤖'}</span> {isLoadingAI ? 'Генерация...' : 'Помощь ИИ'}
             </button>
           </div>
+          <p style={{ 
+            color: 'rgba(255,255,255,0.6)', 
+            fontSize: '14px', 
+            marginBottom: '20px',
+            lineHeight: '1.5'
+          }}>
+            Эти рекомендации будут отправлены сотруднику для его развития и самосовершенствования.
+          </p>
+
+          {/* Ключевые достижения */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ 
+              display: 'block', 
+              color: '#fff', 
+              fontSize: '15px', 
+              fontWeight: '600', 
+              marginBottom: '8px' 
+            }}>
+              Ключевые достижения
+            </label>
+            <textarea
+              value={employeeRecommendations.achievements}
+              onChange={(e) => setEmployeeRecommendations({
+                ...employeeRecommendations,
+                achievements: e.target.value
+              })}
+              placeholder="Например: Успешно завершил проект X, показал высокие результаты в области Y..."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '15px',
+                backgroundColor: '#2a2a2a',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                fontFamily: 'inherit'
+              }}
+            />
+          </div>
+
+          {/* Области для улучшения */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ 
+              display: 'block', 
+              color: '#fff', 
+              fontSize: '15px', 
+              fontWeight: '600', 
+              marginBottom: '8px' 
+            }}>
+              Области для улучшения
+            </label>
+            <textarea
+              value={employeeRecommendations.improvements}
+              onChange={(e) => setEmployeeRecommendations({
+                ...employeeRecommendations,
+                improvements: e.target.value
+              })}
+              placeholder="Например: Рекомендуется усилить навыки коммуникации, развить управленческие компетенции..."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '15px',
+                backgroundColor: '#2a2a2a',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                fontFamily: 'inherit'
+              }}
+            />
+          </div>
+
+          {/* План развития */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ 
+              display: 'block', 
+              color: '#fff', 
+              fontSize: '15px', 
+              fontWeight: '600', 
+              marginBottom: '8px' 
+            }}>
+              План развития
+            </label>
+            <textarea
+              value={employeeRecommendations.developmentPlan}
+              onChange={(e) => setEmployeeRecommendations({
+                ...employeeRecommendations,
+                developmentPlan: e.target.value
+              })}
+              placeholder="Например: Пройти тренинг по лидерству, участвовать в кросс-функциональных проектах..."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                padding: '15px',
+                backgroundColor: '#2a2a2a',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                color: '#fff',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                fontFamily: 'inherit'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '15px', alignItems: 'center' }}>
+            <button
+              onClick={sendEmployeeRecommendations}
+              style={{
+                padding: '12px 32px',
+                backgroundColor: '#FF6B00',
+                color: '#000',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#FFA500'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#FF6B00'}
+            >
+              Отправить сотруднику
+            </button>
+            <span style={{ 
+              color: 'rgba(255,255,255,0.4)', 
+              fontSize: '12px', 
+              fontStyle: 'italic' 
+            }}>
+              Рекомендации будут доступны сотруднику в личном кабинете
+            </span>
+          </div>
+        </div>
+
+        {/* Блок "Управленческие рекомендации" */}
+        <div className="section-card" style={{ marginBottom: '25px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h2 style={{ color: '#FF6B00', margin: 0, fontSize: '20px' }}>
+              Управленческие рекомендации для руководителя
+            </h2>
+            <button
+              onClick={generateManagerRecommendationsAI}
+              disabled={isLoadingAI}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: isLoadingAI ? '#666' : '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: isLoadingAI ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: isLoadingAI ? 0.7 : 1
+              }}
+            >
+              <span>{isLoadingAI ? '⏳' : '🤖'}</span> {isLoadingAI ? 'Генерация...' : 'Помощь ИИ'}
+            </button>
+          </div>
+          <p style={{ 
+            color: 'rgba(255,255,255,0.6)', 
+            fontSize: '14px', 
+            marginBottom: '20px',
+            lineHeight: '1.5'
+          }}>
+            Эти рекомендации будут отправлены непосредственному руководителю сотрудника для принятия управленческих решений.
+          </p>
+          <textarea
+            value={managerRecommendations}
+            onChange={(e) => setManagerRecommendations(e.target.value)}
+            placeholder="Например: Рекомендуется рассмотреть повышение, назначить на роль тимлида, включить в кадровый резерв, организовать дополнительное обучение..."
+            style={{
+              width: '100%',
+              minHeight: '180px',
+              padding: '15px',
+              backgroundColor: '#2a2a2a',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '8px',
+              color: '#fff',
+              fontSize: '15px',
+              lineHeight: '1.6',
+              resize: 'vertical',
+              fontFamily: 'inherit'
+            }}
+          />
+          <div style={{ display: 'flex', gap: '12px', marginTop: '15px', alignItems: 'center' }}>
+            <button
+              onClick={sendManagerRecommendations}
+              style={{
+                padding: '12px 32px',
+                backgroundColor: '#4CAF50',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#45a049'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#4CAF50'}
+            >
+              Отправить руководителю
+            </button>
+            <span style={{ 
+              color: 'rgba(255,255,255,0.4)', 
+              fontSize: '12px', 
+              fontStyle: 'italic' 
+            }}>
+              Рекомендации будут доступны руководителю в его дашборде
+            </span>
+          </div>
+        </div>
+
+        {/* Блок "Подведение итогов" (старый блок, оставляем для общих заметок) */}
+        <div className="section-card" style={{ marginBottom: '25px' }}>
+          <h2 style={{ color: '#FF6B00', marginBottom: '15px', fontSize: '20px' }}>
+            Общие заметки и выводы
+          </h2>
           <p style={{ 
             color: 'rgba(255,255,255,0.6)', 
             fontSize: '14px', 
@@ -332,7 +774,7 @@ const CalculationResults = ({ user, onLogout }) => {
           }}>
             {user.role === 'manager' 
               ? 'Напишите ваши выводы как руководителя: итоги работы сотрудника, планы развития, ключевые рекомендации.'
-              : 'Напишите итоговое резюме: планы развития, ключевые достижения и области для улучшения.'
+              : 'Общие заметки и выводы по оценке сотрудника (для внутреннего использования).'
             }
           </p>
           <textarea
@@ -358,8 +800,8 @@ const CalculationResults = ({ user, onLogout }) => {
               onClick={saveSummary}
               style={{
                 padding: '12px 32px',
-                backgroundColor: '#FF6B00',
-                color: '#000',
+                backgroundColor: '#6c757d',
+                color: '#fff',
                 border: 'none',
                 borderRadius: '6px',
                 fontSize: '16px',
@@ -367,17 +809,17 @@ const CalculationResults = ({ user, onLogout }) => {
                 cursor: 'pointer',
                 transition: 'background-color 0.2s'
               }}
-              onMouseEnter={(e) => e.target.style.backgroundColor = '#FFA500'}
-              onMouseLeave={(e) => e.target.style.backgroundColor = '#FF6B00'}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#5a6268'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#6c757d'}
             >
-              Сохранить итоги
+              Сохранить заметки
             </button>
             <span style={{ 
               color: 'rgba(255,255,255,0.4)', 
               fontSize: '12px', 
               fontStyle: 'italic' 
             }}>
-              💡 В будущем ИИ поможет сгенерировать итоги автоматически
+              Эти заметки видны только вам
             </span>
           </div>
         </div>

@@ -138,7 +138,8 @@ const api = {
         body: JSON.stringify(data)
       }),
     
-    getReceived: () => fetchAPI('/peer-feedback/received')
+    getReceived: () => fetchAPI('/peer-feedback/received'),
+    getByEmployee: (employeeId) => fetchAPI(`/peer-feedback/employee/${employeeId}`)
   },
 
   // Оценка менеджера
@@ -167,6 +168,54 @@ const api = {
     
     getByEmployee: (employeeId) =>
       fetchAPI(`/potential-assessment/employee/${employeeId}`)
+  },
+
+  // Performance Review - управление циклом
+  performanceReview: {
+    // Получить статус PR для сотрудника
+    getStatus: (periodId = null) => 
+      periodId 
+        ? fetchAPI(`/performance-review/status/${periodId}`)
+        : fetchAPI('/performance-review/status'),
+    
+    // Запросить досрочное начало
+    requestEarly: (periodId, comment) =>
+      fetchAPI(`/performance-review/request-early/${periodId}`, {
+        method: 'POST',
+        body: JSON.stringify({ comment })
+      }),
+    
+    // Получить список запросов на одобрение (для руководителя/HR)
+    getPendingRequests: () => fetchAPI('/performance-review/pending-requests'),
+    
+    // Решение руководителя
+    managerDecision: (statusId, approved, comment) =>
+      fetchAPI(`/performance-review/manager-decision/${statusId}`, {
+        method: 'POST',
+        body: JSON.stringify({ approved, comment })
+      }),
+    
+    // Решение HR
+    hrDecision: (statusId, { approved, comment }) =>
+      fetchAPI(`/performance-review/hr-decision/${statusId}`, {
+        method: 'POST',
+        body: JSON.stringify({ approved, comment })
+      }),
+    
+    // Менеджер запрашивает досрочное начало для сотрудника
+    managerRequestEarly: (userId, periodId, reason) =>
+      fetchAPI('/performance-review/manager-request-early', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId, period_id: periodId, reason })
+      })
+  },
+
+  // Индивидуальные периоды оценки
+  employeeReviewPeriods: {
+    get: (userId = null) => 
+      userId 
+        ? fetchAPI(`/employee-review-periods/${userId}`)
+        : fetchAPI('/employee-review-periods')
   },
 
   // Health check

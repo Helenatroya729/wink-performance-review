@@ -12,6 +12,7 @@ import ManagerEvaluation from './pages/ManagerEvaluation';
 import EmployeeDetails from './pages/EmployeeDetails';
 import PotentialAssessment from './pages/PotentialAssessment';
 import CalculationResults from './pages/CalculationResults';
+import DevelopmentPlan from './pages/DevelopmentPlan';
 import './App.css';
 
 function App() {
@@ -57,6 +58,12 @@ function App() {
           <Route path="/employee" element={
             <ProtectedRoute allowedRoles={['employee']}>
               <EmployeeDashboard user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/development-plan" element={
+            <ProtectedRoute allowedRoles={['employee']}>
+              <DevelopmentPlan user={user} onLogout={handleLogout} />
             </ProtectedRoute>
           } />
           
