@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
-const { query, testConnection } = require('./database');
+const { query, getClient, testConnection } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -532,10 +532,10 @@ app.get('/api/peer-feedback/colleagues', authenticateToken, async (req, res) => 
 // Создать запрос на оценку от коллеги
 app.post('/api/peer-feedback/request', authenticateToken, async (req, res) => {
   try {
-    const { reviewer_id, cycle_id, message } = req.body;
+    const { reviewer_id, period_id, message } = req.body;
 
-    if (!reviewer_id || !cycle_id) {
-      return res.status(400).json({ error: 'Не указан коллега или цикл оценки' });
+    if (!reviewer_id || !period_id) {
+      return res.status(400).json({ error: 'Не указан коллега или период оценки' });
     }
 
     // Проверяем, что не запрашиваем оценку у самого себя
@@ -546,8 +546,8 @@ app.post('/api/peer-feedback/request', authenticateToken, async (req, res) => {
     // Проверяем, нет ли уже такого запроса
     const existingRequest = await query(`
       SELECT id FROM peer_feedback_requests 
-      WHERE requester_id = $1 AND reviewer_id = $2 AND cycle_id = $3
-    `, [req.user.id, reviewer_id, cycle_id]);
+      WHERE requester_id = $1 AND reviewer_id = $2 AND period_id = $3
+    `, [req.user.id, reviewer_id, period_id]);
 
     if (existingRequest.rows.length > 0) {
       return res.status(400).json({ error: 'Запрос этому коллеге уже отправлен' });
@@ -555,10 +555,10 @@ app.post('/api/peer-feedback/request', authenticateToken, async (req, res) => {
 
     // Создаем запрос
     const result = await query(`
-      INSERT INTO peer_feedback_requests (requester_id, reviewer_id, cycle_id, message)
+      INSERT INTO peer_feedback_requests (requester_id, reviewer_id, period_id, message)
       VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [req.user.id, reviewer_id, cycle_id, message || null]);
+    `, [req.user.id, reviewer_id, period_id, message || null]);
 
     res.json(result.rows[0]);
   } catch (error) {
@@ -577,10 +577,10 @@ app.get('/api/peer-feedback/my-requests', authenticateToken, async (req, res) =>
         u.last_name as reviewer_last_name,
         u.email as reviewer_email,
         u.position as reviewer_position,
-        c.name as cycle_name
+        erp.name as cycle_name
       FROM peer_feedback_requests r
       JOIN users u ON r.reviewer_id = u.id
-      JOIN review_cycles c ON r.cycle_id = c.id
+      JOIN employee_review_periods erp ON r.period_id = erp.id
       WHERE r.requester_id = $1
       ORDER BY r.created_at DESC
     `, [req.user.id]);
@@ -602,10 +602,10 @@ app.get('/api/peer-feedback/pending-reviews', authenticateToken, async (req, res
         u.last_name as requester_last_name,
         u.email as requester_email,
         u.position as requester_position,
-        c.name as cycle_name
+        erp.name as cycle_name
       FROM peer_feedback_requests r
       JOIN users u ON r.requester_id = u.id
-      JOIN review_cycles c ON r.cycle_id = c.id
+      JOIN employee_review_periods erp ON r.period_id = erp.id
       WHERE r.reviewer_id = $1 AND r.status = 'pending'
       ORDER BY r.created_at DESC
     `, [req.user.id]);
@@ -647,7 +647,7 @@ app.post('/api/peer-feedback/submit', authenticateToken, async (req, res) => {
     // Создаем оценку
     const feedbackResult = await query(`
       INSERT INTO peer_feedbacks (
-        request_id, requester_id, reviewer_id, cycle_id,
+        request_id, requester_id, reviewer_id, period_id,
         result_achievement_rating, personal_qualities_comment, 
         interaction_quality_rating, improvement_suggestions
       )
@@ -657,7 +657,7 @@ app.post('/api/peer-feedback/submit', authenticateToken, async (req, res) => {
       request_id,
       request.requester_id,
       req.user.id,
-      request.cycle_id,
+      request.period_id,
       result_achievement_rating,
       personal_qualities_comment,
       interaction_quality_rating,
@@ -685,10 +685,10 @@ app.get('/api/peer-feedback/received', authenticateToken, async (req, res) => {
         u.first_name as reviewer_first_name,
         u.last_name as reviewer_last_name,
         u.position as reviewer_position,
-        c.name as cycle_name
+        erp.name as cycle_name
       FROM peer_feedbacks f
       JOIN users u ON f.reviewer_id = u.id
-      JOIN review_cycles c ON f.cycle_id = c.id
+      JOIN employee_review_periods erp ON f.period_id = erp.id
       WHERE f.requester_id = $1
       ORDER BY f.created_at DESC
     `, [req.user.id]);
@@ -696,6 +696,43 @@ app.get('/api/peer-feedback/received', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Ошибка при получении оценок от коллег:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Получить оценки от коллег для конкретного сотрудника (доступно для менеджера этого сотрудника, HR или admin)
+app.get('/api/peer-feedback/employee/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId, 10);
+
+    // Проверяем права: менеджер сотрудника, HR или админ
+    const emp = await query(`SELECT manager_id FROM users WHERE id = $1`, [employeeId]);
+    if (emp.rows.length === 0) {
+      return res.status(404).json({ error: 'Сотрудник не найден' });
+    }
+
+    const managerId = emp.rows[0].manager_id;
+    if (req.user.role !== 'hr' && req.user.role !== 'admin' && req.user.id !== managerId) {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const result = await query(`
+      SELECT 
+        f.*,
+        u.first_name as reviewer_first_name,
+        u.last_name as reviewer_last_name,
+        u.position as reviewer_position,
+        erp.name as cycle_name
+      FROM peer_feedbacks f
+      JOIN users u ON f.reviewer_id = u.id
+      JOIN employee_review_periods erp ON f.period_id = erp.id
+      WHERE f.requester_id = $1
+      ORDER BY f.created_at DESC
+    `, [employeeId]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка при получении оценок от коллег для сотрудника:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 });
@@ -1812,7 +1849,64 @@ app.post('/api/employee/save-summary/:id', authenticateToken, async (req, res) =
 // REVIEW PERIODS & NOTIFICATIONS
 // ============================================
 
-// Получить периоды оценки для команды менеджера
+// Получить индивидуальные периоды оценки для команды менеджера
+app.get('/api/manager/team-employee-periods', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const managerId = req.user.role === 'manager' ? req.user.id : null;
+    
+    let whereClause = '';
+    let params = [];
+    
+    if (managerId) {
+      // Для менеджера - только его команда
+      whereClause = 'WHERE u.manager_id = $1 AND CURRENT_DATE >= erp.start_date AND CURRENT_DATE <= erp.end_date';
+      params = [managerId];
+    } else {
+      // Для HR/Admin - все сотрудники, только текущие периоды
+      whereClause = 'WHERE CURRENT_DATE >= erp.start_date AND CURRENT_DATE <= erp.end_date';
+    }
+
+    const result = await query(`
+      SELECT 
+        erp.id,
+        erp.user_id,
+        u.first_name,
+        u.last_name,
+        u.position,
+        u.role,
+        erp.name as period_name,
+        erp.start_date,
+        erp.end_date,
+        prs.status,
+        prs.early_request_date,
+        prs.manager_approved_date,
+        prs.hr_approved_date,
+        CASE 
+          WHEN CURRENT_DATE < erp.start_date THEN 'upcoming'
+          WHEN CURRENT_DATE > erp.end_date THEN 'expired'
+          WHEN prs.status = 'completed' THEN 'completed'
+          WHEN prs.status = 'available' OR prs.status = 'in_progress' THEN 'active'
+          ELSE 'not_started'
+        END as period_status
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      LEFT JOIN performance_review_status prs ON prs.user_id = erp.user_id AND prs.period_id = erp.id
+      ${whereClause}
+      ORDER BY u.last_name, u.first_name, erp.start_date
+    `, params);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения периодов команды:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Получить периоды оценки для команды менеджера (старый эндпоинт - deprecated)
 app.get('/api/manager/team-review-periods', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'manager' && req.user.role !== 'hr' && req.user.role !== 'admin') {
@@ -2031,6 +2125,665 @@ app.get('/api/review-periods', async (req, res) => {
   }
 });
 
+// Получение индивидуальных периодов оценки для сотрудника
+app.get('/api/employee-review-periods/:userId?', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.params.userId || req.user.id;
+    
+    // Проверяем права доступа
+    if (req.params.userId && req.user.id !== parseInt(userId)) {
+      // Если запрашивают чужие периоды, проверяем роль
+      if (req.user.role !== 'hr' && req.user.role !== 'admin' && req.user.role !== 'manager') {
+        return res.status(403).json({ error: 'Недостаточно прав' });
+      }
+    }
+    
+    const result = await query(`
+      SELECT 
+        erp.id,
+        erp.name,
+        erp.start_date,
+        erp.end_date,
+        erp.is_active,
+        erp.created_at,
+        u.first_name,
+        u.last_name,
+        u.hire_date
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.user_id = $1
+      ORDER BY erp.start_date DESC
+    `, [userId]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения индивидуальных периодов оценки:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// ============= PERFORMANCE REVIEW CYCLE API =============
+
+// Получить статус Performance Review для сотрудника и периода
+app.get('/api/performance-review/status/:periodId?', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const periodId = req.params.periodId;
+    
+    let queryText, queryParams;
+    
+    if (periodId) {
+      // Получить статус для конкретного периода
+      queryText = `
+        SELECT 
+          prs.*,
+          erp.name as period_name,
+          erp.start_date,
+          erp.end_date,
+          u.first_name,
+          u.last_name
+        FROM performance_review_status prs
+        JOIN employee_review_periods erp ON prs.period_id = erp.id
+        JOIN users u ON prs.user_id = u.id
+        WHERE prs.user_id = $1 AND prs.period_id = $2
+      `;
+      queryParams = [userId, periodId];
+    } else {
+      // Получить все статусы для пользователя
+      queryText = `
+        SELECT 
+          prs.*,
+          erp.name as period_name,
+          erp.start_date,
+          erp.end_date,
+          u.first_name,
+          u.last_name
+        FROM performance_review_status prs
+        JOIN employee_review_periods erp ON prs.period_id = erp.id
+        JOIN users u ON prs.user_id = u.id
+        WHERE prs.user_id = $1
+        ORDER BY erp.start_date DESC
+      `;
+      queryParams = [userId];
+    }
+    
+    const result = await query(queryText, queryParams);
+    
+    // Проверяем, доступен ли период автоматически (последний месяц)
+    const now = new Date();
+    result.rows = result.rows.map(row => {
+      const endDate = new Date(row.end_date);
+      const startOfLastMonth = new Date(endDate);
+      startOfLastMonth.setMonth(startOfLastMonth.getMonth(), 1);
+      
+      const isInLastMonth = now >= startOfLastMonth && now <= endDate;
+      
+      return {
+        ...row,
+        is_in_last_month: isInLastMonth,
+        can_request_early: row.status === 'not_started' && !isInLastMonth
+      };
+    });
+    
+    res.json(periodId ? result.rows[0] : result.rows);
+  } catch (error) {
+    console.error('Ошибка получения статуса Performance Review:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Запросить досрочное начало Performance Review
+app.post('/api/performance-review/request-early/:periodId', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const periodId = req.params.periodId;
+    const { comment } = req.body;
+    
+    // Проверяем текущий статус
+    const statusResult = await query(
+      'SELECT * FROM performance_review_status WHERE user_id = $1 AND period_id = $2',
+      [userId, periodId]
+    );
+    
+    if (statusResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+    
+    const currentStatus = statusResult.rows[0];
+    
+    if (currentStatus.status !== 'not_started') {
+      return res.status(400).json({ error: 'Невозможно запросить досрочное начало для этого периода' });
+    }
+    
+    // Обновляем статус
+    await query(`
+      UPDATE performance_review_status
+      SET 
+        status = 'pending_approval',
+        early_request_date = NOW(),
+        early_request_comment = $1,
+        updated_at = NOW()
+      WHERE user_id = $2 AND period_id = $3
+    `, [comment, userId, periodId]);
+    
+    res.json({ 
+      success: true, 
+      message: 'Запрос на досрочное начало Performance Review отправлен руководителю' 
+    });
+  } catch (error) {
+    console.error('Ошибка запроса досрочного начала:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Менеджер запрашивает досрочное начало PR для своего сотрудника
+app.post('/api/performance-review/manager-request-early', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager') {
+      return res.status(403).json({ error: 'Только менеджеры могут запрашивать досрочное начало для сотрудников' });
+    }
+    
+    const { user_id, period_id, reason } = req.body;
+    
+    // Проверяем, что сотрудник действительно в команде менеджера
+    const employeeCheck = await query(
+      'SELECT id FROM users WHERE id = $1 AND manager_id = $2',
+      [user_id, req.user.id]
+    );
+    
+    if (employeeCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Сотрудник не в вашей команде' });
+    }
+    
+    // Проверяем текущий статус
+    const statusResult = await query(
+      'SELECT * FROM performance_review_status WHERE user_id = $1 AND period_id = $2',
+      [user_id, period_id]
+    );
+    
+    if (statusResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+    
+    const currentStatus = statusResult.rows[0];
+    
+    if (currentStatus.status !== 'not_started') {
+      return res.status(400).json({ error: 'Невозможно запросить досрочное начало для этого периода' });
+    }
+    
+    // Обновляем статус - автоматически одобряем от имени менеджера и отправляем на одобрение HR
+    await query(`
+      UPDATE performance_review_status
+      SET 
+        status = 'manager_approved',
+        early_request_date = NOW(),
+        early_request_comment = $1,
+        manager_approved_date = NOW(),
+        manager_approved_by = $2,
+        manager_comment = 'Запрос от менеджера: ' || $1,
+        updated_at = NOW()
+      WHERE user_id = $3 AND period_id = $4
+    `, [reason, req.user.id, user_id, period_id]);
+    
+    res.json({ 
+      success: true, 
+      message: 'Запрос отправлен HR на одобрение' 
+    });
+  } catch (error) {
+    console.error('Ошибка запроса досрочного начала от менеджера:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Получить список запросов на досрочное начало (для руководителя)
+app.get('/api/performance-review/pending-requests', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Недостаточно прав' });
+    }
+    
+    let queryText;
+    let queryParams = [];
+    
+    if (req.user.role === 'manager') {
+      // Руководитель видит запросы своих подчиненных
+      queryText = `
+        SELECT 
+          prs.id as status_id,
+          prs.user_id,
+          prs.period_id,
+          prs.status,
+          prs.early_request_date,
+          prs.early_request_comment,
+          erp.name as period_name,
+          erp.start_date,
+          erp.end_date,
+          u.first_name || ' ' || u.last_name as employee_name,
+          u.email,
+          u.position
+        FROM performance_review_status prs
+        JOIN employee_review_periods erp ON prs.period_id = erp.id
+        JOIN users u ON prs.user_id = u.id
+        WHERE u.manager_id = $1 
+          AND prs.status IN ('pending_approval', 'manager_approved')
+        ORDER BY prs.early_request_date DESC
+      `;
+      queryParams = [req.user.id];
+    } else {
+      // HR видит все запросы со статусом manager_approved
+      queryText = `
+        SELECT 
+          prs.id as status_id,
+          prs.user_id,
+          prs.period_id,
+          prs.status,
+          prs.early_request_date as requested_date,
+          prs.early_request_comment as employee_comment,
+          prs.manager_approved_date,
+          prs.manager_approval_comment,
+          erp.name as period_name,
+          erp.start_date,
+          erp.end_date,
+          u.first_name || ' ' || u.last_name as employee_name,
+          u.email,
+          u.position,
+          m.first_name as manager_first_name,
+          m.last_name as manager_last_name
+        FROM performance_review_status prs
+        JOIN employee_review_periods erp ON prs.period_id = erp.id
+        JOIN users u ON prs.user_id = u.id
+        LEFT JOIN users m ON u.manager_id = m.id
+        WHERE prs.status = 'manager_approved'
+        ORDER BY prs.manager_approved_date DESC
+      `;
+    }
+    
+    const result = await query(queryText, queryParams);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения списка запросов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Одобрить/отклонить запрос (руководитель)
+app.post('/api/performance-review/manager-decision/:statusId', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager') {
+      return res.status(403).json({ error: 'Только руководитель может принимать решение' });
+    }
+    
+    const statusId = req.params.statusId;
+    const { approved, comment } = req.body;
+    
+    // Проверяем, что это запрос от подчиненного
+    const statusResult = await query(`
+      SELECT prs.*, u.manager_id
+      FROM performance_review_status prs
+      JOIN employee_review_periods erp ON prs.period_id = erp.id
+      JOIN users u ON prs.user_id = u.id
+      WHERE prs.id = $1
+    `, [statusId]);
+    
+    if (statusResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Запрос не найден' });
+    }
+    
+    const request = statusResult.rows[0];
+    
+    if (request.manager_id !== req.user.id) {
+      return res.status(403).json({ error: 'Вы не являетесь руководителем этого сотрудника' });
+    }
+    
+    if (request.status !== 'pending_approval') {
+      return res.status(400).json({ error: 'Этот запрос уже обработан' });
+    }
+    
+    // Обновляем статус
+    const newStatus = approved ? 'manager_approved' : 'not_started';
+    
+    await query(`
+      UPDATE performance_review_status
+      SET 
+        status = $1,
+        manager_approved_date = NOW(),
+        manager_approved_by = $2,
+        manager_approval_comment = $3,
+        updated_at = NOW()
+      WHERE id = $4
+    `, [newStatus, req.user.id, comment, statusId]);
+    
+    res.json({ 
+      success: true, 
+      message: approved 
+        ? 'Запрос одобрен. Ожидается одобрение HR.' 
+        : 'Запрос отклонен'
+    });
+  } catch (error) {
+    console.error('Ошибка принятия решения руководителем:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Одобрить/отклонить запрос (HR)
+app.post('/api/performance-review/hr-decision/:statusId', authenticateToken, async (req, res) => {
+  const client = await getClient();
+  
+  try {
+    await client.query('BEGIN');
+    
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Только HR может принимать финальное решение' });
+    }
+    
+    const statusId = req.params.statusId;
+    const { approved, comment } = req.body;
+    
+    // Проверяем статус
+    const statusResult = await client.query(
+      `SELECT prs.*, erp.user_id, erp.start_date, erp.end_date, erp.id as period_id
+       FROM performance_review_status prs
+       JOIN employee_review_periods erp ON prs.period_id = erp.id
+       WHERE prs.id = $1`,
+      [statusId]
+    );
+    
+    if (statusResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Запрос не найден' });
+    }
+    
+    const request = statusResult.rows[0];
+    
+    if (request.status !== 'manager_approved') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Запрос должен быть сначала одобрен руководителем' });
+    }
+    
+    if (approved) {
+      // ОДОБРЕНО: Делаем PR доступным и пересчитываем периоды
+      const newStatus = 'available';
+      
+      await client.query(`
+        UPDATE performance_review_status
+        SET 
+          status = $1,
+          hr_approved_date = NOW(),
+          hr_approved_by = $2,
+          hr_approval_comment = $3,
+          updated_at = NOW()
+        WHERE id = $4
+      `, [newStatus, req.user.id, comment, statusId]);
+      
+      // Пересчитываем периоды: сокращаем текущий период и сдвигаем последующие
+      const userId = request.user_id;
+      const periodId = request.period_id;
+      const originalEndDate = new Date(request.end_date);
+      const newEndDate = new Date(); // Начинаем PR сейчас
+      
+      // Вычисляем сдвиг в днях
+      const daysDiff = Math.floor((originalEndDate - newEndDate) / (1000 * 60 * 60 * 24));
+      
+      console.log(`📅 Пересчет периодов для пользователя ${userId}:`);
+      console.log(`   Период ID ${periodId}: конец сдвигается с ${originalEndDate.toISOString()} на ${newEndDate.toISOString()}`);
+      console.log(`   Сдвиг: ${daysDiff} дней`);
+      
+      // Обновляем текущий период (завершаем его сейчас)
+      await client.query(`
+        UPDATE employee_review_periods
+        SET end_date = CURRENT_DATE
+        WHERE id = $1
+      `, [periodId]);
+      
+      // Сдвигаем все последующие периоды на разницу в днях
+      // Находим периоды, которые начинаются после текущего периода
+      await client.query(`
+        UPDATE employee_review_periods
+        SET 
+          start_date = start_date - INTERVAL '${daysDiff} days',
+          end_date = end_date - INTERVAL '${daysDiff} days'
+        WHERE user_id = $1 AND start_date > $2
+      `, [userId, request.end_date]);
+      
+      console.log(`✅ Периоды пересчитаны для пользователя ${userId}`);
+      
+      await client.query('COMMIT');
+      
+      res.json({ 
+        success: true, 
+        message: 'Запрос одобрен. Performance Review начат досрочно. Последующие периоды пересчитаны.',
+        periodAdjusted: true,
+        daysSaved: daysDiff
+      });
+    } else {
+      // ОТКЛОНЕНО: просто возвращаем статус
+      await client.query(`
+        UPDATE performance_review_status
+        SET 
+          status = 'not_started',
+          hr_approved_date = NOW(),
+          hr_approved_by = $1,
+          hr_approval_comment = $2,
+          updated_at = NOW()
+        WHERE id = $3
+      `, [req.user.id, comment, statusId]);
+      
+      await client.query('COMMIT');
+      
+      res.json({ 
+        success: true, 
+        message: 'Запрос отклонен',
+        periodAdjusted: false
+      });
+    }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Ошибка принятия решения HR:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  } finally {
+    client.release();
+  }
+});
+
+// HR: Отправка рекомендаций сотруднику
+app.post('/api/hr/send-employee-recommendations/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { achievements, improvements, developmentPlan } = req.body;
+    
+    // Проверка роли
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    // Проверяем, существует ли сотрудник
+    const employeeCheck = await query('SELECT id, first_name, last_name FROM users WHERE id = $1', [employeeId]);
+    if (employeeCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Сотрудник не найден' });
+    }
+
+    // Создаем таблицу для рекомендаций, если её нет
+    await query(`
+      CREATE TABLE IF NOT EXISTS employee_recommendations (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        hr_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        achievements TEXT,
+        improvements TEXT,
+        development_plan TEXT,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT false
+      )
+    `);
+
+    // Сохраняем рекомендации для сотрудника
+    const result = await query(`
+      INSERT INTO employee_recommendations 
+        (employee_id, hr_id, achievements, improvements, development_plan, sent_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING *
+    `, [employeeId, req.user.id, achievements, improvements, developmentPlan]);
+
+    console.log(`✅ Рекомендации отправлены сотруднику ${employeeCheck.rows[0].first_name} ${employeeCheck.rows[0].last_name}`);
+
+    res.json({ 
+      success: true, 
+      message: 'Рекомендации успешно отправлены сотруднику',
+      recommendation: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Ошибка при отправке рекомендаций сотруднику:', error);
+    res.status(500).json({ error: 'Ошибка сервера при отправке рекомендаций' });
+  }
+});
+
+// HR: Отправка управленческих рекомендаций руководителю
+app.post('/api/hr/send-manager-recommendations/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const { recommendations } = req.body;
+    
+    // Проверка роли
+    if (req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    // Получаем информацию о сотруднике и его руководителе
+    const employeeResult = await query(`
+      SELECT u.id, u.first_name, u.last_name, u.manager_id,
+             m.first_name as manager_first_name, m.last_name as manager_last_name
+      FROM users u
+      LEFT JOIN users m ON u.manager_id = m.id
+      WHERE u.id = $1
+    `, [employeeId]);
+
+    if (employeeResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Сотрудник не найден' });
+    }
+
+    const employee = employeeResult.rows[0];
+    
+    if (!employee.manager_id) {
+      return res.status(400).json({ error: 'У сотрудника не назначен руководитель' });
+    }
+
+    // Создаем таблицу для управленческих рекомендаций, если её нет
+    await query(`
+      CREATE TABLE IF NOT EXISTS manager_recommendations (
+        id SERIAL PRIMARY KEY,
+        employee_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        manager_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        hr_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        recommendations TEXT NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_read BOOLEAN DEFAULT false
+      )
+    `);
+
+    // Сохраняем управленческие рекомендации
+    const result = await query(`
+      INSERT INTO manager_recommendations 
+        (employee_id, manager_id, hr_id, recommendations, sent_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      RETURNING *
+    `, [employeeId, employee.manager_id, req.user.id, recommendations]);
+
+    console.log(`✅ Управленческие рекомендации отправлены руководителю ${employee.manager_first_name} ${employee.manager_last_name} по сотруднику ${employee.first_name} ${employee.last_name}`);
+
+    res.json({ 
+      success: true, 
+      message: 'Управленческие рекомендации успешно отправлены руководителю',
+      recommendation: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('❌ Ошибка при отправке управленческих рекомендаций:', error);
+    res.status(500).json({ error: 'Ошибка сервера при отправке рекомендаций' });
+  }
+});
+
+// Сотрудник: Получить свои рекомендации от HR
+app.get('/api/employee/my-recommendations', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        er.id,
+        er.achievements,
+        er.improvements,
+        er.development_plan,
+        er.sent_at,
+        er.is_read,
+        CONCAT(u.first_name, ' ', u.last_name) as hr_name
+      FROM employee_recommendations er
+      LEFT JOIN users u ON er.hr_id = u.id
+      WHERE er.employee_id = $1
+      ORDER BY er.sent_at DESC
+    `, [req.user.id]);
+
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error('❌ Ошибка при получении рекомендаций:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Менеджер: Получить управленческие рекомендации по своим сотрудникам
+app.get('/api/manager/recommendations', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const result = await query(`
+      SELECT 
+        mr.id,
+        mr.employee_id,
+        mr.recommendations,
+        mr.sent_at,
+        mr.is_read,
+        CONCAT(e.first_name, ' ', e.last_name) as employee_name,
+        e.position as employee_position,
+        CONCAT(hr.first_name, ' ', hr.last_name) as hr_name
+      FROM manager_recommendations mr
+      JOIN users e ON mr.employee_id = e.id
+      LEFT JOIN users hr ON mr.hr_id = hr.id
+      WHERE mr.manager_id = $1
+      ORDER BY mr.sent_at DESC
+    `, [req.user.id]);
+
+    res.json(result.rows);
+
+  } catch (error) {
+    console.error('❌ Ошибка при получении управленческих рекомендаций:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Отметить рекомендацию как прочитанную
+app.post('/api/recommendations/mark-read/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type } = req.body; // 'employee' или 'manager'
+
+    const tableName = type === 'employee' ? 'employee_recommendations' : 'manager_recommendations';
+    
+    await query(`
+      UPDATE ${tableName}
+      SET is_read = true
+      WHERE id = $1
+    `, [id]);
+
+    res.json({ success: true, message: 'Рекомендация отмечена как прочитанная' });
+
+  } catch (error) {
+    console.error('❌ Ошибка при обновлении статуса рекомендации:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // Запуск сервера
 app.listen(PORT, () => {
   console.log(`
@@ -2052,6 +2805,10 @@ app.listen(PORT, () => {
   console.log('   GET  /api/hr/analytics - HR аналитика');
   console.log('   GET  /api/hr/employee-scores - Баллы сотрудников');
   console.log('   GET  /api/hr/nine-box - 9-Box матрица');
+  console.log('   POST /api/hr/send-employee-recommendations/:id - Отправить рекомендации сотруднику');
+  console.log('   POST /api/hr/send-manager-recommendations/:id - Отправить рекомендации руководителю');
+  console.log('   GET  /api/employee/my-recommendations - Получить свои рекомендации');
+  console.log('   GET  /api/manager/recommendations - Получить рекомендации по команде');
   console.log('   GET  /api/peer-feedback/colleagues - Список коллег');
   console.log('   POST /api/peer-feedback/request - Запросить оценку');
   console.log('   GET  /api/peer-feedback/my-requests - Мои запросы');
