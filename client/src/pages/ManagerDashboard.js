@@ -15,6 +15,11 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const [rejectComment, setRejectComment] = useState('');
   const [pendingReviews, setPendingReviews] = useState([]);
   const [reviewPeriods, setReviewPeriods] = useState([]);
+  const [pendingPRRequests, setPendingPRRequests] = useState([]);
+  const [showPRDecisionModal, setShowPRDecisionModal] = useState(false);
+  const [currentPRRequest, setCurrentPRRequest] = useState(null);
+  const [prDecisionType, setPrDecisionType] = useState(null); // 'approve' or 'reject'
+  const [prDecisionComment, setPrDecisionComment] = useState('');
 
   const scrollToGoals = () => {
     const goalsSection = document.querySelector('.content-grid');
@@ -35,16 +40,18 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, statsData, reviewsData, periodsData] = await Promise.all([
+      const [goalsData, statsData, reviewsData, periodsData, prRequestsData] = await Promise.all([
         api.goals.getAll(),
         api.dashboard.getStats(),
         api.peerFeedback.getPendingReviews(),
-        api.get('/manager/team-review-periods')
+        api.get('/manager/team-employee-periods'),
+        api.performanceReview.getPendingRequests()
       ]);
       setTeamGoals(goalsData);
       setStats(statsData);
       setPendingReviews(reviewsData);
       setReviewPeriods(periodsData);
+      setPendingPRRequests(prRequestsData.filter(r => r.status === 'pending_approval'));
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     } finally {
@@ -95,6 +102,53 @@ const ManagerDashboard = ({ user, onLogout }) => {
     }
   };
 
+  const handleRequestEarlyPR = async (period) => {
+    const reason = prompt(`Запросить досрочное начало Performance Review для ${period.first_name} ${period.last_name}?\n\nУкажите причину:`);
+    
+    if (!reason || !reason.trim()) {
+      return;
+    }
+
+    try {
+      await api.performanceReview.managerRequestEarly(period.user_id, period.id, reason);
+      alert('Запрос отправлен HR на одобрение');
+      loadData();
+    } catch (error) {
+      alert('Ошибка: ' + error.message);
+    }
+  };
+
+  const handleManagerPRDecision = async (request, approved) => {
+    setCurrentPRRequest(request);
+    setPrDecisionType(approved ? 'approve' : 'reject');
+    setPrDecisionComment('');
+    setShowPRDecisionModal(true);
+  };
+
+  const handleSubmitPRDecision = async (e) => {
+    e.preventDefault();
+    
+    if (prDecisionType === 'reject' && !prDecisionComment.trim()) {
+      alert('Укажите причину отклонения');
+      return;
+    }
+
+    try {
+      await api.performanceReview.managerDecision(
+        currentPRRequest.status_id, 
+        prDecisionType === 'approve', 
+        prDecisionComment || ''
+      );
+      alert(prDecisionType === 'approve' ? 'Запрос одобрен и отправлен HR' : 'Запрос отклонен');
+      setShowPRDecisionModal(false);
+      setCurrentPRRequest(null);
+      setPrDecisionComment('');
+      loadData();
+    } catch (error) {
+      alert('Ошибка: ' + error.message);
+    }
+  };
+
   const getStatusLabel = (status) => {
     const labels = {
       'draft': 'Черновик',
@@ -114,10 +168,21 @@ const ManagerDashboard = ({ user, onLogout }) => {
   // Формируем уведомления для руководителя
   const notifications = [];
   
+  // Уведомление о запросах на досрочное начало PR
+  if (pendingPRRequests.length > 0) {
+    const latestRequest = pendingPRRequests[0];
+    notifications.push({
+      id: 1,
+      text: `${latestRequest.employee_name} запрашивает досрочное начало Performance Review`,
+      time: new Date(latestRequest.early_request_date).toLocaleDateString(),
+      action: () => handleManagerPRDecision(latestRequest, true)
+    });
+  }
+  
   // Уведомление о целях на утверждении
   if (pendingCount > 0) {
     notifications.push({
-      id: 1,
+      id: 2,
       text: `${pendingCount} ${pendingCount === 1 ? 'цель требует' : 'целей требуют'} утверждения`,
       time: 'Сейчас',
       action: () => handleFilterAndScroll('submitted')
@@ -128,7 +193,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
   if (pendingReviews.length > 0) {
     const latestReview = pendingReviews[0];
     notifications.push({
-      id: 2,
+      id: 3,
       text: `${latestReview.requester_first_name} ${latestReview.requester_last_name} запрашивает вашу оценку`,
       time: new Date(latestReview.created_at).toLocaleDateString(),
       action: () => navigate('/peer-feedback?tab=pending')
@@ -139,7 +204,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const needsEvaluation = teamGoals.filter(g => g.status === 'approved').length > 0;
   if (needsEvaluation) {
     notifications.push({
-      id: 3,
+      id: 4,
       text: 'Необходимо провести оценку сотрудников',
       time: '2 дня назад',
       action: () => navigate('/manager-evaluation')
@@ -203,15 +268,16 @@ const ManagerDashboard = ({ user, onLogout }) => {
                     const startDate = new Date(period.start_date);
                     const endDate = new Date(period.end_date);
                     const today = new Date();
-                    const isActive = period.is_active;
-                    const isUpcoming = today < startDate;
-                    const isExpired = today > endDate;
+                    const isActive = period.period_status === 'active';
+                    const isUpcoming = period.period_status === 'upcoming';
+                    const isExpired = period.period_status === 'expired';
+                    const isCompleted = period.period_status === 'completed';
                     
                     let statusColor = '#999';
-                    let statusText = 'Не назначен';
+                    let statusText = 'Не начат';
                     let statusEmoji = '⚪';
                     
-                    if (period.status === 'completed') {
+                    if (isCompleted) {
                       statusColor = '#4CAF50';
                       statusText = 'Завершен';
                       statusEmoji = '✅';
@@ -238,7 +304,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
                           {period.position || 'Сотрудник'}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center', color: '#ccc', fontSize: '14px' }}>
-                          {startDate.toLocaleDateString('ru-RU')} - {endDate.toLocaleDateString('ru-RU')}
+                          {period.period_name || `${startDate.toLocaleDateString('ru-RU')} - ${endDate.toLocaleDateString('ru-RU')}`}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <span style={{ 
@@ -269,13 +335,48 @@ const ManagerDashboard = ({ user, onLogout }) => {
                             >
                               Оценить
                             </button>
-                          ) : isUpcoming ? (
+                          ) : period.status === 'pending_approval' ? (
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => {
+                                  const request = pendingPRRequests.find(r => r.user_id === period.user_id && r.period_id === period.id);
+                                  if (request) handleManagerPRDecision(request, true);
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  backgroundColor: '#10b981',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                Одобрить
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  const request = pendingPRRequests.find(r => r.user_id === period.user_id && r.period_id === period.id);
+                                  if (request) handleManagerPRDecision(request, false);
+                                }}
+                                style={{
+                                  padding: '6px 12px',
+                                  backgroundColor: '#ef4444',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                Отклонить
+                              </button>
+                            </div>
+                          ) : (period.period_status === 'not_started' || period.period_status === 'upcoming') && period.status !== 'pending_approval' && period.status !== 'manager_approved' ? (
                             <button 
-                              onClick={() => {
-                                if (window.confirm('Запросить ранний Performance Review у HR?')) {
-                                  alert('Функция в разработке');
-                                }
-                              }}
+                              onClick={() => handleRequestEarlyPR(period)}
                               style={{
                                 padding: '6px 16px',
                                 backgroundColor: 'transparent',
@@ -289,6 +390,8 @@ const ManagerDashboard = ({ user, onLogout }) => {
                             >
                               Запросить ранний PR
                             </button>
+                          ) : period.status === 'manager_approved' ? (
+                            <span style={{ color: '#FFA366', fontSize: '13px' }}>Ожидает одобрения HR</span>
                           ) : (
                             <span style={{ color: '#666', fontSize: '13px' }}>—</span>
                           )}
@@ -521,6 +624,76 @@ const ManagerDashboard = ({ user, onLogout }) => {
                     setShowRejectModal(false);
                     setRejectingGoal(null);
                     setRejectComment('');
+                  }}
+                >
+                  Отмена
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно: Решение по досрочному началу PR */}
+      {showPRDecisionModal && currentPRRequest && (
+        <div className="modal-overlay" onClick={() => setShowPRDecisionModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>
+              {prDecisionType === 'approve' ? 'Одобрить запрос' : 'Отклонить запрос'}
+            </h2>
+            
+            <div style={{ padding: '16px', backgroundColor: 'rgba(255,107,0,0.1)', borderRadius: '8px', marginBottom: '20px' }}>
+              <p style={{ color: '#999', fontSize: '13px', marginBottom: '8px' }}>
+                Сотрудник: <strong>{currentPRRequest.employee_name}</strong>
+              </p>
+              <p style={{ color: '#999', fontSize: '13px', marginBottom: '8px' }}>
+                Период: <strong>{currentPRRequest.period_name}</strong>
+              </p>
+              {currentPRRequest.early_request_comment && (
+                <p style={{ color: '#999', fontSize: '13px', marginTop: '12px' }}>
+                  Комментарий сотрудника: <br/>
+                  <em style={{ color: '#ccc' }}>"{currentPRRequest.early_request_comment}"</em>
+                </p>
+              )}
+            </div>
+
+            <form onSubmit={handleSubmitPRDecision}>
+              <div className="form-group">
+                <label htmlFor="pr-decision-comment">
+                  {prDecisionType === 'approve' ? 'Комментарий (необязательно)' : 'Причина отклонения'} 
+                  {prDecisionType === 'reject' && <span style={{ color: '#f44336' }}> *</span>}
+                </label>
+                <textarea
+                  id="pr-decision-comment"
+                  value={prDecisionComment}
+                  onChange={(e) => setPrDecisionComment(e.target.value)}
+                  placeholder={prDecisionType === 'approve' 
+                    ? 'Укажите дополнительный комментарий...' 
+                    : 'Укажите, почему запрос отклонен...'
+                  }
+                  rows="4"
+                  required={prDecisionType === 'reject'}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button 
+                  type="submit" 
+                  className="btn-primary" 
+                  style={{ 
+                    backgroundColor: prDecisionType === 'approve' ? '#10b981' : '#ef4444' 
+                  }}
+                >
+                  {prDecisionType === 'approve' ? 'Одобрить и отправить HR' : 'Отклонить запрос'}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-secondary"
+                  onClick={() => {
+                    setShowPRDecisionModal(false);
+                    setCurrentPRRequest(null);
+                    setPrDecisionComment('');
                   }}
                 >
                   Отмена

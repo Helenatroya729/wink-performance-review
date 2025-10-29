@@ -15,9 +15,10 @@ const PeerFeedback = ({ user, onLogout }) => {
   const [cycles, setCycles] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [showRequestForm, setShowRequestForm] = useState(false);
+  const [prStatuses, setPrStatuses] = useState([]);
   const [requestForm, setRequestForm] = useState({
     reviewer_id: '',
-    cycle_id: '',
+    period_id: '',
     message: ''
   });
 
@@ -47,13 +48,29 @@ const PeerFeedback = ({ user, onLogout }) => {
       setLoading(true);
       
       if (activeTab === 'request') {
-        const [colleaguesData, cyclesData, requestsData] = await Promise.all([
+        // Загружаем индивидуальные периоды сотрудника
+        const periodsData = await api.employeeReviewPeriods.get(user.id);
+        
+        // Загружаем статусы Performance Review для каждого периода
+        const statusesPromises = periodsData.map(period => 
+          api.performanceReview.getStatus(period.id)
+        );
+        const statusesData = await Promise.all(statusesPromises);
+        setPrStatuses(statusesData);
+        
+        // Показываем только периоды со статусом 'available' или 'in_progress'
+        const availablePeriods = periodsData.filter((period, index) => {
+          const status = statusesData[index]?.status;
+          return status === 'available' || status === 'in_progress';
+        });
+        
+        const [colleaguesData, requestsData] = await Promise.all([
           api.peerFeedback.getColleagues(),
-          api.cycles.getAll(),
           api.peerFeedback.getMyRequests()
         ]);
+        
         setColleagues(colleaguesData);
-        setCycles(cyclesData.filter(c => c.status === 'active'));
+        setCycles(availablePeriods);
         setMyRequests(requestsData);
       } else if (activeTab === 'pending') {
         const reviewsData = await api.peerFeedback.getPendingReviews();
@@ -73,7 +90,7 @@ const PeerFeedback = ({ user, onLogout }) => {
       await api.peerFeedback.requestFeedback(requestForm);
       alert('Запрос на оценку отправлен!');
       setShowRequestForm(false);
-      setRequestForm({ reviewer_id: '', cycle_id: '', message: '' });
+      setRequestForm({ reviewer_id: '', period_id: '', message: '' });
       loadData();
     } catch (error) {
       alert('Ошибка: ' + error.message);
@@ -193,10 +210,26 @@ const PeerFeedback = ({ user, onLogout }) => {
                   <button 
                     className="btn-primary" 
                     onClick={() => setShowRequestForm(true)}
+                    disabled={cycles.length === 0}
+                    title={cycles.length === 0 ? 'Нет доступных периодов для оценки' : ''}
                   >
                     + Запросить оценку
                   </button>
                 </div>
+
+                {cycles.length === 0 && (
+                  <div style={{ 
+                    padding: '20px', 
+                    marginBottom: '20px',
+                    background: 'rgba(255, 107, 0, 0.1)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 107, 0, 0.3)',
+                    color: '#FFA366'
+                  }}>
+                    <strong>Информация:</strong> Запросить оценку от коллег можно только когда начался период Performance Review. 
+                    Дождитесь начала последнего месяца вашего периода или запросите досрочное начало на главной странице.
+                  </div>
+                )}
 
                 {myRequests.length === 0 ? (
                   <p style={{ color: 'var(--wink-light-gray)', textAlign: 'center', padding: '40px' }}>
@@ -332,11 +365,11 @@ const PeerFeedback = ({ user, onLogout }) => {
                 </div>
 
                 <div className="form-group">
-                  <label>Цикл оценки *</label>
+                  <label>Период оценки *</label>
                   <select
                     required
-                    value={requestForm.cycle_id}
-                    onChange={(e) => setRequestForm({...requestForm, cycle_id: parseInt(e.target.value)})}
+                    value={requestForm.period_id}
+                    onChange={(e) => setRequestForm({...requestForm, period_id: parseInt(e.target.value)})}
                     style={{
                       width: '100%',
                       padding: '12px',
@@ -347,12 +380,15 @@ const PeerFeedback = ({ user, onLogout }) => {
                       fontSize: '14px'
                     }}
                   >
-                    <option value="">Выберите цикл</option>
-                    {cycles.map(cycle => (
-                      <option key={cycle.id} value={cycle.id}>
-                        {cycle.name}
-                      </option>
-                    ))}
+                    <option value="">Выберите период</option>
+                    {cycles.map(cycle => {
+                      const prStatus = prStatuses.find(s => s.period_id === cycle.id);
+                      return (
+                        <option key={cycle.id} value={cycle.id}>
+                          {cycle.name} ({new Date(cycle.start_date).toLocaleDateString('ru-RU')} - {new Date(cycle.end_date).toLocaleDateString('ru-RU')})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

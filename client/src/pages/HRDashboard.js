@@ -33,10 +33,23 @@ const HRDashboard = ({ user, onLogout }) => {
   const [filterStatus, setFilterStatus] = useState('all'); // all, completed, in_progress, overdue, not_started
   const [sortBy, setSortBy] = useState('status'); // status, total, name
   const [sortOrder, setSortOrder] = useState('asc'); // asc, desc
+  
+  // Для одобрения ранних PR
+  const [pendingPRRequests, setPendingPRRequests] = useState([]);
+  const [showHRDecisionModal, setShowHRDecisionModal] = useState(false);
+  const [currentHRRequest, setCurrentHRRequest] = useState(null);
+  const [hrDecisionType, setHrDecisionType] = useState(''); // 'approve' или 'reject'
+  const [hrDecisionComment, setHrDecisionComment] = useState('');
 
   useEffect(() => {
     loadHRData();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'pr-approvals') {
+      loadPendingPRRequests();
+    }
+  }, [activeTab]);
 
   const loadHRData = async () => {
     try {
@@ -80,6 +93,54 @@ const HRDashboard = ({ user, onLogout }) => {
 
   const handleDeleteTrigger = (index) => {
     setTriggers(triggers.filter((_, i) => i !== index));
+  };
+  
+  const loadPendingPRRequests = async () => {
+    try {
+      const requests = await api.performanceReview.getPendingRequests();
+      // Фильтруем только запросы, одобренные менеджером
+      const hrPending = requests.filter(r => r.status === 'manager_approved');
+      setPendingPRRequests(hrPending);
+    } catch (error) {
+      console.error('Ошибка загрузки запросов PR:', error);
+      alert('Ошибка: ' + error.message);
+    }
+  };
+  
+  const handleHRPRDecision = (request, decisionType) => {
+    setCurrentHRRequest(request);
+    setHrDecisionType(decisionType);
+    setHrDecisionComment('');
+    setShowHRDecisionModal(true);
+  };
+  
+  const handleSubmitHRDecision = async (e) => {
+    e.preventDefault();
+    
+    if (hrDecisionType === 'reject' && !hrDecisionComment.trim()) {
+      alert('Укажите причину отклонения');
+      return;
+    }
+    
+    try {
+      const approved = hrDecisionType === 'approve';
+      await api.performanceReview.hrDecision(currentHRRequest.status_id, {
+        approved,
+        comment: hrDecisionComment
+      });
+      
+      alert(approved 
+        ? 'Запрос одобрен! Performance Review начат досрочно, периоды пересчитаны.'
+        : 'Запрос отклонен'
+      );
+      
+      setShowHRDecisionModal(false);
+      setCurrentHRRequest(null);
+      setHrDecisionComment('');
+      loadPendingPRRequests();
+    } catch (error) {
+      alert('Ошибка: ' + error.message);
+    }
   };
 
   const loadEmployeeDetails = async (employeeId) => {
@@ -247,6 +308,39 @@ const HRDashboard = ({ user, onLogout }) => {
               }}
             >
               Рекомендации
+            </button>
+            <button 
+              onClick={() => setActiveTab('pr-approvals')} 
+              style={{ 
+                padding: '12px 24px', 
+                background: activeTab === 'pr-approvals' ? '#FF6B00' : 'transparent', 
+                color: activeTab === 'pr-approvals' ? '#000' : '#fff', 
+                border: 'none', 
+                cursor: 'pointer', 
+                fontSize: '16px', 
+                fontWeight: '600',
+                position: 'relative'
+              }}
+            >
+              Ранние PR
+              {pendingPRRequests.length > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  background: '#ef4444',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  width: '20px',
+                  height: '20px',
+                  fontSize: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {pendingPRRequests.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -740,7 +834,235 @@ const HRDashboard = ({ user, onLogout }) => {
             </div>
           </div>
         )}
+        
+        {/* Вкладка: Одобрение ранних PR */}
+        {activeTab === 'pr-approvals' && (
+          <div className="section-card">
+            <h2 className="section-title">Запросы на ранний Performance Review</h2>
+            <p style={{ color: 'var(--wink-light-gray)', marginBottom: '20px' }}>
+              Запросы от менеджеров и сотрудников, одобренные руководителями. Ваше решение запустит досрочный PR и пересчитает последующие периоды.
+            </p>
+            
+            {pendingPRRequests.length === 0 ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '40px', 
+                color: 'var(--wink-light-gray)',
+                background: 'var(--wink-dark-gray)',
+                borderRadius: '12px'
+              }}>
+                <p style={{ fontSize: '18px', marginBottom: '8px' }}>Нет ожидающих запросов</p>
+                <p style={{ fontSize: '14px' }}>Все запросы на ранний PR обработаны</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {pendingPRRequests.map(request => (
+                  <div key={request.status_id} style={{
+                    padding: '24px',
+                    background: 'var(--wink-dark-gray)',
+                    borderRadius: '12px',
+                    borderLeft: '4px solid var(--wink-orange)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
+                      <div>
+                        <h3 style={{ fontSize: '18px', fontWeight: '600', color: 'var(--wink-white)', marginBottom: '8px' }}>
+                          {request.employee_name}
+                        </h3>
+                        <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)', marginBottom: '4px' }}>
+                          {request.position}
+                        </div>
+                        <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)' }}>
+                          Период: {request.period_name}
+                        </div>
+                      </div>
+                      <span style={{
+                        padding: '6px 16px',
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        color: '#10b981'
+                      }}>
+                        Одобрено менеджером
+                      </span>
+                    </div>
+                    
+                    {request.employee_comment && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--wink-light-gray)', marginBottom: '6px' }}>
+                          Комментарий сотрудника:
+                        </div>
+                        <div style={{ 
+                          padding: '12px', 
+                          background: 'var(--wink-gray)', 
+                          borderRadius: '8px', 
+                          fontSize: '14px', 
+                          color: 'var(--wink-white)' 
+                        }}>
+                          {request.employee_comment}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {request.manager_approval_comment && (
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '13px', color: 'var(--wink-light-gray)', marginBottom: '6px' }}>
+                          Комментарий менеджера:
+                        </div>
+                        <div style={{ 
+                          padding: '12px', 
+                          background: 'var(--wink-gray)', 
+                          borderRadius: '8px', 
+                          fontSize: '14px', 
+                          color: 'var(--wink-white)' 
+                        }}>
+                          {request.manager_approval_comment}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div style={{ fontSize: '13px', color: 'var(--wink-light-gray)', marginBottom: '16px' }}>
+                      Дата запроса: {new Date(request.requested_date).toLocaleDateString('ru-RU')}
+                      {request.manager_approved_date && ` | Одобрено менеджером: ${new Date(request.manager_approved_date).toLocaleDateString('ru-RU')}`}
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '12px' }}>
+                      <button
+                        onClick={() => handleHRPRDecision(request, 'approve')}
+                        style={{
+                          padding: '10px 20px',
+                          background: '#10b981',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        ✓ Одобрить и запустить PR
+                      </button>
+                      <button
+                        onClick={() => handleHRPRDecision(request, 'reject')}
+                        style={{
+                          padding: '10px 20px',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          border: '2px solid #ef4444',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        ✗ Отклонить
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Модальное окно: HR решение по раннему PR */}
+      {showHRDecisionModal && currentHRRequest && (
+        <div className="modal-overlay" onClick={() => setShowHRDecisionModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <h2 style={{ marginBottom: '20px' }}>
+              {hrDecisionType === 'approve' ? 'Одобрить ранний PR' : 'Отклонить запрос'}
+            </h2>
+            
+            <div style={{ 
+              padding: '16px', 
+              background: 'var(--wink-dark-gray)', 
+              borderRadius: '8px', 
+              marginBottom: '20px',
+              borderLeft: `4px solid ${hrDecisionType === 'approve' ? '#10b981' : '#ef4444'}`
+            }}>
+              <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--wink-white)', marginBottom: '8px' }}>
+                {currentHRRequest.employee_name}
+              </div>
+              <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)', marginBottom: '4px' }}>
+                {currentHRRequest.position}
+              </div>
+              <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)' }}>
+                Период: {currentHRRequest.period_name}
+              </div>
+            </div>
+            
+            {hrDecisionType === 'approve' && (
+              <div style={{ 
+                padding: '12px', 
+                background: 'rgba(16, 185, 129, 0.1)', 
+                borderRadius: '8px', 
+                marginBottom: '20px',
+                border: '1px solid rgba(16, 185, 129, 0.3)'
+              }}>
+                <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600', marginBottom: '8px' }}>
+                  ⚠️ Внимание
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--wink-light-gray)', lineHeight: '1.5' }}>
+                  При одобрении запроса:
+                  <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
+                    <li>Текущий период завершится досрочно (сегодня)</li>
+                    <li>Performance Review станет доступен немедленно</li>
+                    <li>Все последующие периоды сдвинутся на разницу в днях</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmitHRDecision}>
+              <div className="form-group">
+                <label>
+                  {hrDecisionType === 'approve' ? 'Комментарий (необязательно)' : 'Причина отклонения *'}
+                </label>
+                <textarea
+                  value={hrDecisionComment}
+                  onChange={(e) => setHrDecisionComment(e.target.value)}
+                  placeholder={hrDecisionType === 'approve' 
+                    ? 'Добавьте комментарий, если необходимо...'
+                    : 'Укажите причину отклонения запроса...'
+                  }
+                  rows="4"
+                  required={hrDecisionType === 'reject'}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: 'var(--wink-gray)',
+                    border: '1px solid var(--wink-medium-gray)',
+                    borderRadius: '8px',
+                    color: 'var(--wink-white)',
+                    fontSize: '14px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+              
+              <div className="modal-buttons">
+                <button 
+                  type="submit" 
+                  className="btn-primary"
+                  style={{
+                    background: hrDecisionType === 'approve' ? '#10b981' : '#ef4444'
+                  }}
+                >
+                  {hrDecisionType === 'approve' ? 'Одобрить' : 'Отклонить'}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  onClick={() => setShowHRDecisionModal(false)}
+                >
+                  Отмена
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Модальное окно с деталями сотрудника */}
       {selectedEmployee && (

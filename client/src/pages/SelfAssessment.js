@@ -11,6 +11,7 @@ const SelfAssessment = ({ user, onLogout }) => {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [prStatuses, setPrStatuses] = useState([]);
   // const [existingAssessment, setExistingAssessment] = useState(null); // Временно не используется
   
   const [assessment, setAssessment] = useState({
@@ -36,14 +37,27 @@ const SelfAssessment = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [cyclesData, goalsData] = await Promise.all([
-        api.cycles.getAll(),
-        api.goals.getAll()
-      ]);
       
-      // Показываем только активные циклы (когда руководитель открыл период оценки)
-      const activeCycles = cyclesData.filter(c => c.status === 'active');
-      setCycles(activeCycles);
+      // Загружаем индивидуальные периоды сотрудника
+      const periodsData = await api.employeeReviewPeriods.get(user.id);
+      
+      // Загружаем статусы Performance Review для каждого периода
+      const statusesPromises = periodsData.map(period => 
+        api.performanceReview.getStatus(period.id)
+      );
+      const statusesData = await Promise.all(statusesPromises);
+      setPrStatuses(statusesData);
+      
+      // Показываем только периоды со статусом 'available' или 'in_progress'
+      const availablePeriods = periodsData.filter((period, index) => {
+        const status = statusesData[index]?.status;
+        return status === 'available' || status === 'in_progress';
+      });
+      
+      setCycles(availablePeriods);
+      
+      // Загружаем цели сотрудника
+      const goalsData = await api.goals.getAll();
       setGoals(goalsData);
       
       // TODO: Загрузить существующую самооценку, если есть
@@ -155,15 +169,23 @@ const SelfAssessment = ({ user, onLogout }) => {
               ) : cycles.length > 0 ? (
                 <div className="goals-list">
                   {cycles.map(cycle => {
-                    const cycleGoals = goals.filter(g => g.cycle_id === cycle.id && g.status === 'approved');
+                    const prStatus = prStatuses.find(s => s.period_id === cycle.id);
+                    const cycleGoals = goals.filter(g => {
+                      // Фильтруем цели по датам периода
+                      const goalDate = new Date(g.created_at || g.start_date);
+                      const periodStart = new Date(cycle.start_date);
+                      const periodEnd = new Date(cycle.end_date);
+                      return g.status === 'approved' && goalDate >= periodStart && goalDate <= periodEnd;
+                    });
+                    
                     return (
                       <div key={cycle.id} className="goal-item">
                         <div className="goal-header">
                           <h3>{cycle.name}</h3>
                           <span className="goal-status" style={{ 
-                            backgroundColor: cycle.status === 'active' ? '#4CAF50' : '#999' 
+                            backgroundColor: prStatus?.status === 'available' ? '#4CAF50' : prStatus?.status === 'in_progress' ? '#FF6B00' : '#999' 
                           }}>
-                            {cycle.status === 'active' ? 'Активный' : cycle.status === 'completed' ? 'Завершен' : 'Запланирован'}
+                            {prStatus?.status === 'available' ? 'Активный' : prStatus?.status === 'in_progress' ? 'В процессе' : 'Доступен'}
                           </span>
                         </div>
                         
