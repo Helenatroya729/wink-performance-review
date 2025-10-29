@@ -1,0 +1,20 @@
+aiassistant/
+├── app/
+│   ├── **init**.py
+│   ├── main.py
+│   ├── config.py
+│   ├── models.py
+│   ├── routes/
+│   │   ├── **init**.py
+│   │   └── endpoints.py
+│   ├── services/
+│   │   ├── **init**.py
+│   │   └── llm_service.py
+│   └── prompts/
+│       ├── manager_summarize.txt
+│       ├── results_and_plan.txt
+│       └── steps_of_manager.txt
+├── requirements.txt
+├── .env.example
+├── .env
+└── README.md

@@ -1,0 +1,55 @@
+curl -X POST http://localhost:8000/api/manager-summarize \ -H "Content-Type: application/json" \ -d '{
+  "employee_name": "Иван Петров",
+  "goals": [
+    {
+      "goal_title": "Увеличение продаж на 20%",
+      "goal_description": "Разработать и внедрить новую стратегию продаж для увеличения выручки на 20% в текущем квартале",
+      "result_achievement_rating": 8,
+      "personal_qualities_comment": "Проявил отличные лидерские качества, активно мотивировал команду",
+      "personal_contribution_comment": "Внес значительный вклад в разработку новой стратегии, провел обучение команды",
+      "interaction_quality_rating": 9,
+      "improvement_suggestions": "Рекомендую улучшить навыки делегирования задач",
+      "overall_rating": 8
+    }
+  ],
+  "peer_reviews_general": [
+    {
+      "author": "Коллега 1",
+      "position": "Старший менеджер по продажам",
+      "technical_skills": 8,
+      "communication": 9,
+      "teamwork": 9,
+      "problem_solving": 8,
+      "initiative": 9,
+      "strengths": "Отлично работает с клиентами, всегда готов помочь коллегам",
+      "areas_for_improvement": "Иногда берет на себя слишком много задач",
+      "additional_comments": "Ценный член команды, рекомендую для повышения"
+    },
+    {
+      "author": "Коллега 2",
+      "position": "Аналитик",
+      "technical_skills": 7,
+      "communication": 8,
+      "teamwork": 9,
+      "problem_solving": 8,
+      "initiative": 8,
+      "strengths": "Хорошо анализирует данные, предлагает конструктивные решения",
+      "areas_for_improvement": "Нужно больше внимания уделять документации процессов",
+      "additional_comments": "Приятно работать в команде с таким профессионалом"
+    },
+    {
+      "author": "Коллега 3",
+      "position": "Менеджер проектов",
+      "technical_skills": 8,
+      "communication": 9,
+      "teamwork": 10,
+      "problem_solving": 9,
+      "initiative": 9,
+      "strengths": "Всегда находит выход из сложных ситуаций, отличный командный игрок",
+      "areas_for_improvement": "Можно улучшить тайм-менеджмент",
+      "additional_comments": "Один из лучших специалистов в отделе"
+    }
+  ],
+  "manager_comments": "Внес значительный вклад в разработку новой стратегии, провел обучение команды",
+  "self_assessment": ""
+}'
