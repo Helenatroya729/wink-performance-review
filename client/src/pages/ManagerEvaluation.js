@@ -1,21 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
 import './Dashboard.css';
 
 const ManagerEvaluation = ({ user, onLogout }) => {
   const navigate = useNavigate();
+  const { employeeId, periodId } = useParams();
   const [loading, setLoading] = useState(true);
-  const [employees, setEmployees] = useState([]);
-  const [cycles, setCycles] = useState([]);
+  const [readyEmployees, setReadyEmployees] = useState([]); // сотрудники готовые к оценке
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [peerReviews, setPeerReviews] = useState([]);
-  const [selectedCycle, setSelectedCycle] = useState('');
-  const [employeeGoals, setEmployeeGoals] = useState([]);
   const [showEvaluationForm, setShowEvaluationForm] = useState(false);
-  const [currentGoal, setCurrentGoal] = useState(null);
+  const [autoMode, setAutoMode] = useState(false); // если true — автооценка по ссылке
+  const [evaluationSent, setEvaluationSent] = useState(false); // для блокировки кнопки
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [selfAssessment, setSelfAssessment] = useState(null); // для хранения самооценки
   
   const [evaluationForm, setEvaluationForm] = useState({
     goal_id: '',
@@ -33,15 +33,9 @@ const ManagerEvaluation = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [usersData, cyclesData] = await Promise.all([
-        api.users.getAll(),
-        api.cycles.getAll()
-      ]);
-      
-      // Фильтруем только сотрудников из команды менеджера
-      const teamMembers = usersData.filter(u => u.manager_id === user.id);
-      setEmployees(teamMembers);
-      setCycles(cyclesData.filter(c => c.status === 'active'));
+      // Получаем только сотрудников, готовых к оценке
+      const readyData = await api.get('/manager-evaluation/ready-employees');
+      setReadyEmployees(readyData);
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
       alert('Ошибка: ' + error.message);
@@ -55,48 +49,65 @@ const ManagerEvaluation = ({ user, onLogout }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Если есть параметры employeeId и periodId — автоустановка режима
+  useEffect(() => {
+    if (employeeId && periodId) {
+      setAutoMode(true);
+      (async () => {
+        setLoading(true);
+        try {
+          // Получаем сотрудников готовых к оценке
+          const readyData = await api.get('/manager-evaluation/ready-employees');
+          setReadyEmployees(readyData);
+          
+          const emp = readyData.find(e => e.user_id === parseInt(employeeId) && e.period_id === parseInt(periodId));
+          if (emp) {
+            setSelectedEmployee(emp);
+            await handleEmployeeSelect(emp);
+          }
+          setShowEvaluationForm(false);
+        } catch (e) {
+          console.error('Ошибка:', e);
+          setSelectedEmployee(null);
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+  }, [employeeId, periodId]);
+
   const handleEmployeeSelect = async (employee) => {
     setSelectedEmployee(employee);
-    if (selectedCycle) {
-      await loadEmployeeGoals(employee.id, selectedCycle);
-    }
-
-    // Загружаем оценки от коллег для выбранного сотрудника (если у менеджера есть доступ)
+    
+    // Загружаем оценки от коллег для выбранного сотрудника
     try {
-      const reviews = await api.peerFeedback.getByEmployee(employee.id);
+      const reviews = await api.peerFeedback.getByEmployee(employee.user_id, employee.period_id);
       setPeerReviews(reviews);
     } catch (err) {
       console.warn('Не удалось загрузить оценки от коллег для сотрудника:', err.message);
       setPeerReviews([]);
     }
-  };
 
-  const handleCycleSelect = async (cycleId) => {
-    setSelectedCycle(cycleId);
-    if (selectedEmployee) {
-      await loadEmployeeGoals(selectedEmployee.id, cycleId);
-    }
-  };
-
-  const loadEmployeeGoals = async (employeeId, cycleId) => {
+    // Загружаем самооценку сотрудника
     try {
-      const goalsData = await api.goals.getAll();
-      const filtered = goalsData.filter(
-        g => g.user_id === employeeId && g.cycle_id === parseInt(cycleId) && g.status === 'approved'
-      );
-      setEmployeeGoals(filtered);
-    } catch (error) {
-      console.error('Ошибка загрузки целей:', error);
-      alert('Ошибка: ' + error.message);
+      const selfAssessments = await api.get(`/self-assessment/employee/${employee.user_id}?periodId=${employee.period_id}`);
+      if (Array.isArray(selfAssessments) && selfAssessments.length > 0) {
+        setSelfAssessment(selfAssessments); // Сохраняем весь массив
+      } else {
+        setSelfAssessment(null);
+      }
+    } catch (err) {
+      setSelfAssessment(null);
     }
   };
 
-  const handleStartEvaluation = (goal) => {
-    setCurrentGoal(goal);
+  const handleStartEvaluation = () => {
+    // Начать оценку сотрудника
     setEvaluationForm({
-      goal_id: goal.id,
-      employee_id: selectedEmployee.id,
-      cycle_id: parseInt(selectedCycle),
+      goal_id: null, // Не используем goal_id, устарело
+      employee_id: selectedEmployee.user_id,
+      cycle_id: selectedEmployee.cycle_id,
+      period_id: selectedEmployee.period_id, // Добавляем period_id
       result_achievement_rating: 5,
       personal_qualities_comment: '',
       personal_contribution_comment: '',
@@ -115,38 +126,37 @@ const ManagerEvaluation = ({ user, onLogout }) => {
 
     setIsGeneratingAI(true);
     try {
-      // Формируем массив целей (пока одна цель, но структура готова для multi-goal)
-      const goals = [{
-        goal_title: currentGoal.title,
-        goal_description: currentGoal.description,
+      // Формируем данные оценки
+      const evaluationData = {
         result_achievement_rating: evaluationForm.result_achievement_rating,
         personal_qualities_comment: evaluationForm.personal_qualities_comment,
         personal_contribution_comment: evaluationForm.personal_contribution_comment,
         interaction_quality_rating: evaluationForm.interaction_quality_rating,
         improvement_suggestions: evaluationForm.improvement_suggestions,
         overall_rating: evaluationForm.overall_rating
-      }];
+      };
 
       // Анонимизируем отзывы коллег (убираем имена, оставляем только должность и текст)
       const anonymizedPeerReviews = (peerReviews || []).map((r, index) => ({
         author: `Коллега ${index + 1}`,
         position: r.reviewer_position || 'Не указана',
-        technical_skills: r.technical_skills,
-        communication: r.communication,
-        teamwork: r.teamwork,
-        problem_solving: r.problem_solving,
-        initiative: r.initiative,
-        strengths: r.strengths,
-        areas_for_improvement: r.areas_for_improvement,
-        additional_comments: r.additional_comments
+        personal_qualities: r.personal_qualities_comment || '',
+        improvement_suggestions: r.improvement_suggestions || '',
+        result_achievement_rating: r.result_achievement_rating || 0,
+        interaction_quality_rating: r.interaction_quality_rating || 0
       }));
+
+      // Собираем самооценку в текст
+      const selfAssessmentText = Array.isArray(selfAssessment) 
+        ? selfAssessment.map((item, idx) => `Вопрос ${idx + 1}: ${item.answer_text || ''}`).join('\n')
+        : (selfAssessment?.answer_text || '');
 
       const requestBody = {
         employee_name: selectedEmployee.first_name + ' ' + selectedEmployee.last_name,
-        goals: goals,
+        goals: [evaluationData], // используем evaluationData вместо goals
         peer_reviews_general: anonymizedPeerReviews,
         manager_comments: evaluationForm.personal_contribution_comment || '',
-        self_assessment: '' // Можно добавить, если есть доступ к самооценке
+        self_assessment: selfAssessmentText
       };
 
       // Логируем для отладки (можно убрать в продакшене)
@@ -186,6 +196,7 @@ const ManagerEvaluation = ({ user, onLogout }) => {
       await api.managerEvaluation.submit(evaluationForm);
       alert('Оценка успешно отправлена!');
       setShowEvaluationForm(false);
+      setEvaluationSent(true); // блокируем повторную отправку
       setEvaluationForm({
         goal_id: '',
         employee_id: '',
@@ -198,8 +209,9 @@ const ManagerEvaluation = ({ user, onLogout }) => {
         overall_rating: 5,
         feedback_summary: ''
       });
-      // Перезагружаем список целей
-      await loadEmployeeGoals(selectedEmployee.id, selectedCycle);
+      
+      // Перезагружаем список готовых сотрудников
+      await loadData();
     } catch (error) {
       alert('Ошибка: ' + error.message);
     }
@@ -230,128 +242,226 @@ const ManagerEvaluation = ({ user, onLogout }) => {
       
       <div className="dashboard-content">
         <div className="dashboard-header">
-          <h1>Оценка сотрудников</h1>
+          <h1>Готовые к оценке</h1>
           <button className="btn-secondary" onClick={() => navigate('/manager-dashboard')}>
             ← Назад к панели
           </button>
         </div>
 
-        {/* Выбор сотрудника и цикла */}
+        {/* Список сотрудников готовых к оценке */}
         {!showEvaluationForm && (
           <div className="section-card">
-            <h2 className="section-title">Выберите сотрудника и цикл оценки</h2>
+            <h2 className="section-title">Сотрудники готовые к оценке</h2>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--wink-white)', fontWeight: '600' }}>
-                  Сотрудник
-                </label>
-                <select
-                  value={selectedEmployee?.id || ''}
-                  onChange={(e) => {
-                    const emp = employees.find(em => em.id === parseInt(e.target.value));
-                    handleEmployeeSelect(emp);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid var(--wink-medium-gray)',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--wink-black)',
-                    color: 'var(--wink-white)',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Выберите сотрудника</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.first_name} {emp.last_name} - {emp.position}
-                    </option>
-                  ))}
-                </select>
+            {readyEmployees.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--wink-light-gray)' }}>
+                <div style={{ fontSize: '48px', marginBottom: '20px' }}>📋</div>
+                <h3 style={{ marginBottom: '12px', color: 'var(--wink-white)' }}>Никто не готов к оценке</h3>
+                <p style={{ marginBottom: '8px' }}>
+                  Сотрудник готов к оценке когда:
+                </p>
+                <ul style={{ textAlign: 'left', display: 'inline-block', marginTop: '16px', lineHeight: '1.8' }}>
+                  <li>Период Performance Review в статусе "В процессе"</li>
+                  <li>Самооценка завершена</li>
+                  <li>Получено минимум 3 отзыва от коллег</li>
+                </ul>
               </div>
-
-              <div>
-                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--wink-white)', fontWeight: '600' }}>
-                  Цикл оценки
-                </label>
-                <select
-                  value={selectedCycle}
-                  onChange={(e) => handleCycleSelect(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '1px solid var(--wink-medium-gray)',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--wink-black)',
-                    color: 'var(--wink-white)',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="">Выберите цикл</option>
-                  {cycles.map(cycle => (
-                    <option key={cycle.id} value={cycle.id}>
-                      {cycle.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Список целей сотрудника */}
-            {selectedEmployee && selectedCycle && (
+            ) : (
               <>
-                <h3 style={{ marginTop: '32px', marginBottom: '16px', color: 'var(--wink-white)' }}>
-                  Цели сотрудника: {selectedEmployee.first_name} {selectedEmployee.last_name}
-                </h3>
-                
-                {employeeGoals.length === 0 ? (
-                  <p style={{ color: 'var(--wink-light-gray)', textAlign: 'center', padding: '40px' }}>
-                    У сотрудника нет утверждённых целей в этом цикле
-                  </p>
-                ) : (
-                  <div style={{ display: 'grid', gap: '16px' }}>
-                    {employeeGoals.map(goal => (
-                      <div key={goal.id} style={{
+                <p style={{ color: 'var(--wink-light-gray)', marginBottom: '24px' }}>
+                  Эти сотрудники прошли самооценку и получили обратную связь от коллег
+                </p>
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {readyEmployees.map(emp => {
+                    const startDate = new Date(emp.start_date);
+                    const endDate = new Date(emp.end_date);
+                    const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
+                    const periodName = `Полугодие ${periodNum} - ${startDate.getFullYear()}`;
+                    
+                    return (
+                      <div key={`${emp.user_id}-${emp.period_id}`} style={{
                         padding: '20px',
-                        background: 'var(--wink-dark-gray)',
+                        border: '1px solid var(--wink-medium-gray)',
                         borderRadius: '12px',
-                        borderLeft: '4px solid var(--wink-orange)'
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '16px', fontWeight: '600', color: 'var(--wink-white)' }}>
-                              {goal.title}
+                        backgroundColor: 'var(--wink-dark-gray)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onClick={() => handleEmployeeSelect(emp)}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--wink-orange)'}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--wink-medium-gray)'}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <h3 style={{ marginBottom: '8px', color: 'var(--wink-white)' }}>
+                              {emp.first_name} {emp.last_name}
+                            </h3>
+                            <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>
+                              {emp.position}
+                            </p>
+                            <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px' }}>
+                              {periodName}
+                            </p>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: 'var(--wink-green)', fontSize: '14px', marginBottom: '4px' }}>
+                              ✅ Самооценка завершена
                             </div>
-                            <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)', marginTop: '8px' }}>
-                              {goal.description}
+                            <div style={{ color: 'var(--wink-green)', fontSize: '14px' }}>
+                              ✅ {emp.peer_reviews_count} отзывов получено
                             </div>
                           </div>
-                          <button
-                            className="btn-primary"
-                            onClick={() => handleStartEvaluation(goal)}
-                          >
-                            Оценить
-                          </button>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            
+            
+            {/* Информация о сотруднике и кнопка начала оценки */}
+            {selectedEmployee && (
+              <>
+                <div style={{ 
+                  marginTop: '32px', 
+                  padding: '24px', 
+                  background: 'var(--wink-dark-gray)', 
+                  borderRadius: '12px',
+                  border: '1px solid var(--wink-medium-gray)'
+                }}>
+                  <h3 style={{ marginBottom: '16px', color: 'var(--wink-white)' }}>
+                    Готово к оценке: {selectedEmployee.first_name} {selectedEmployee.last_name}
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                    <div>
+                      <div style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>Должность</div>
+                      <div style={{ color: 'var(--wink-white)', fontSize: '16px' }}>{selectedEmployee.position}</div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>Период</div>
+                      <div style={{ color: 'var(--wink-white)', fontSize: '16px' }}>
+                        {(() => {
+                          const startDate = new Date(selectedEmployee.start_date);
+                          const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
+                          return `Полугодие ${periodNum} - ${startDate.getFullYear()}`;
+                        })()}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>Самооценка</div>
+                      <div style={{ color: 'var(--wink-green)', fontSize: '16px' }}>✅ Завершена</div>
+                    </div>
+                    <div>
+                      <div style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>Отзывы коллег</div>
+                      <div style={{ color: 'var(--wink-green)', fontSize: '16px' }}>✅ {selectedEmployee.peer_reviews_count} получено</div>
+                    </div>
                   </div>
-                )}
+                  
+                  {(!autoMode || !evaluationSent) && (
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleStartEvaluation()}
+                      disabled={autoMode && evaluationSent}
+                      style={{ width: '100%', padding: '16px', fontSize: '16px' }}
+                    >
+                      Начать оценку сотрудника
+                    </button>
+                  )}
+                  
+                  {autoMode && evaluationSent && (
+                    <div style={{ 
+                      textAlign: 'center', 
+                      color: '#4CAF50', 
+                      fontWeight: 600, 
+                      padding: '16px',
+                      background: 'rgba(76, 175, 80, 0.1)',
+                      borderRadius: '8px'
+                    }}>
+                      ✅ Оценка успешно отправлена
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
         )}
 
         {/* Форма оценки */}
-        {showEvaluationForm && currentGoal && (
+        {showEvaluationForm && (
           <div className="section-card">
             <h2 className="section-title">
               Оценка сотрудника: {selectedEmployee.first_name} {selectedEmployee.last_name}
             </h2>
             <p style={{ color: 'var(--wink-light-gray)', marginBottom: '24px' }}>
-              {selectedEmployee.position} • Цикл: {cycles.find(c => c.id === parseInt(selectedCycle))?.name}
+              {selectedEmployee.position}
             </p>
+
+            {/* Блок: Самооценка сотрудника */}
+            {selfAssessment && Array.isArray(selfAssessment) && selfAssessment.length > 0 && (
+              <div style={{
+                background: 'var(--wink-dark-gray)',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '18px',
+                borderLeft: '4px solid var(--wink-blue)'
+              }}>
+                <h3 style={{ color: 'var(--wink-blue)', fontSize: '15px', marginBottom: '12px' }}>Самооценка сотрудника</h3>
+                {selfAssessment.map((item, idx) => (
+                  <div key={item.id || idx} style={{ 
+                    marginBottom: '12px',
+                    paddingBottom: '12px',
+                    borderBottom: idx < selfAssessment.length - 1 ? '1px solid var(--wink-medium-gray)' : 'none'
+                  }}>
+                    <div style={{ color: 'var(--wink-light-gray)', fontSize: '13px', marginBottom: '4px' }}>
+                      Вопрос {item.question_id}
+                    </div>
+                    <div style={{ color: 'var(--wink-white)', fontSize: '14px' }}>
+                      {item.answer_text || 'Нет ответа'}
+                    </div>
+                    {item.answer_score !== null && (
+                      <div style={{ color: 'var(--wink-orange)', fontSize: '13px', marginTop: '4px' }}>
+                        Оценка: {item.answer_score}/10
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Блок: Оценки коллег */}
+            {peerReviews && peerReviews.length > 0 && (
+              <div style={{
+                background: 'var(--wink-dark-gray)',
+                padding: '16px',
+                borderRadius: '8px',
+                marginBottom: '18px',
+                borderLeft: '4px solid var(--wink-green)'
+              }}>
+                <h3 style={{ color: 'var(--wink-green)', fontSize: '15px', marginBottom: '12px' }}>Оценки коллег</h3>
+                {peerReviews.map((r, idx) => (
+                  <div key={r.id || idx} style={{ 
+                    marginBottom: '12px', 
+                    paddingBottom: '12px', 
+                    borderBottom: idx < peerReviews.length - 1 ? '1px solid var(--wink-medium-gray)' : 'none' 
+                  }}>
+                    <div style={{ color: 'var(--wink-light-gray)', fontWeight: 600, marginBottom: '6px' }}>
+                      Коллега {idx + 1}: {r.reviewer_first_name} {r.reviewer_last_name}
+                    </div>
+                    <div style={{ color: 'var(--wink-white)', fontSize: '14px', marginBottom: '4px' }}>
+                      <strong>Личные качества:</strong> {r.personal_qualities_comment || 'Нет комментария'}
+                    </div>
+                    <div style={{ color: 'var(--wink-white)', fontSize: '14px', marginBottom: '4px' }}>
+                      <strong>Рекомендации:</strong> {r.improvement_suggestions || 'Нет рекомендаций'}
+                    </div>
+                    <div style={{ color: 'var(--wink-white)', fontSize: '14px' }}>
+                      <strong>Оценки:</strong> Достижение результатов: {r.result_achievement_rating}/10, 
+                      Взаимодействие: {r.interaction_quality_rating}/10
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Преамбула */}
             <div style={{ 
@@ -374,16 +484,21 @@ const ManagerEvaluation = ({ user, onLogout }) => {
               </ol>
             </div>
 
-            {/* Отображение задачи */}
+            {/* Информация о периоде */}
             <div style={{
               background: 'var(--wink-dark-gray)',
               padding: '16px',
               borderRadius: '8px',
               marginBottom: '24px'
             }}>
-              <h4 style={{ color: 'var(--wink-white)', marginBottom: '8px' }}>Оцениваемая задача:</h4>
-              <p style={{ color: 'var(--wink-white)', fontSize: '16px', fontWeight: '600' }}>{currentGoal.title}</p>
-              <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginTop: '8px' }}>{currentGoal.description}</p>
+              <h4 style={{ color: 'var(--wink-white)', marginBottom: '8px' }}>Оценка за период:</h4>
+              <p style={{ color: 'var(--wink-white)', fontSize: '16px', fontWeight: '600' }}>
+                {(() => {
+                  const startDate = new Date(selectedEmployee.start_date);
+                  const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
+                  return `Полугодие ${periodNum} - ${startDate.getFullYear()}`;
+                })()}
+              </p>
             </div>
 
             <form onSubmit={handleSubmitEvaluation}>

@@ -46,8 +46,7 @@ class LLMService:
                 goal_data = goal.dict() if hasattr(goal, 'dict') else goal.__dict__
             
             formatted.append(f"""
-Цель {i}: {goal_data.get('goal_title', 'Не указано')}
-Описание: {goal_data.get('goal_description', 'Не указано')}
+Оценка {i}:
 Оценка достижения результата: {goal_data.get('result_achievement_rating', 0)}/10
 Комментарий о личных качествах: {goal_data.get('personal_qualities_comment', 'Не указано')}
 Комментарий о личном вкладе: {goal_data.get('personal_contribution_comment', 'Не указано')}
@@ -70,14 +69,10 @@ class LLMService:
             formatted.append(f"""
 Отзыв {i}:
 Автор: {review_data.get('author', 'Не указано')} ({review_data.get('position', 'Не указано')})
-Технические навыки: {review_data.get('technical_skills', 0)}/10
-Коммуникация: {review_data.get('communication', 0)}/10
-Командная работа: {review_data.get('teamwork', 0)}/10
-Решение проблем: {review_data.get('problem_solving', 0)}/10
-Инициативность: {review_data.get('initiative', 0)}/10
-Сильные стороны: {review_data.get('strengths', 'Не указано')}
-Области для улучшения: {review_data.get('areas_for_improvement', 'Не указано')}
-Дополнительные комментарии: {review_data.get('additional_comments', 'Не указано')}
+Личные качества: {review_data.get('personal_qualities', 'Не указано')}
+Предложения по улучшению: {review_data.get('improvement_suggestions', 'Не указано')}
+Оценка достижения результата: {review_data.get('result_achievement_rating', 0)}/10
+Оценка качества взаимодействия: {review_data.get('interaction_quality_rating', 0)}/10
 """)
         return "\n".join(formatted)
     

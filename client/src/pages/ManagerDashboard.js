@@ -16,6 +16,8 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const [pendingReviews, setPendingReviews] = useState([]);
   const [reviewPeriods, setReviewPeriods] = useState([]);
   const [pendingPRRequests, setPendingPRRequests] = useState([]);
+  const [readyForManagerEvaluation, setReadyForManagerEvaluation] = useState([]);
+  const [readyForPotentialAssessment, setReadyForPotentialAssessment] = useState([]);
   const [showPRDecisionModal, setShowPRDecisionModal] = useState(false);
   const [currentPRRequest, setCurrentPRRequest] = useState(null);
   const [prDecisionType, setPrDecisionType] = useState(null); // 'approve' or 'reject'
@@ -40,18 +42,25 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, statsData, reviewsData, periodsData, prRequestsData] = await Promise.all([
+      const [goalsData, statsData, reviewsData, periodsData, prRequestsData, managerEvalData, potentialData] = await Promise.all([
         api.goals.getAll(),
         api.dashboard.getStats(),
         api.peerFeedback.getPendingReviews(),
         api.get('/manager/team-employee-periods'),
-        api.performanceReview.getPendingRequests()
+        api.reviewPeriods.getPendingManagerApproval(),
+        api.get('/manager-evaluation/ready-employees'),
+        api.get('/potential-assessment/ready-employees')
       ]);
       setTeamGoals(goalsData);
       setStats(statsData);
       setPendingReviews(reviewsData);
       setReviewPeriods(periodsData);
-      setPendingPRRequests(prRequestsData.filter(r => r.status === 'pending_approval'));
+      setPendingPRRequests(prRequestsData);
+      setReadyForManagerEvaluation(managerEvalData);
+      setReadyForPotentialAssessment(potentialData);
+      console.log('📋 Запросы на утверждение PR:', prRequestsData);
+      console.log('📝 Готовы к оценке по целям:', managerEvalData);
+      console.log('⭐ Готовы к оценке потенциала:', potentialData);
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
     } finally {
@@ -134,12 +143,13 @@ const ManagerDashboard = ({ user, onLogout }) => {
     }
 
     try {
-      await api.performanceReview.managerDecision(
-        currentPRRequest.status_id, 
-        prDecisionType === 'approve', 
-        prDecisionComment || ''
-      );
-      alert(prDecisionType === 'approve' ? 'Запрос одобрен и отправлен HR' : 'Запрос отклонен');
+      if (prDecisionType === 'approve') {
+        await api.reviewPeriods.managerApprove(currentPRRequest.id);
+        alert('Запрос одобрен и отправлен HR');
+      } else {
+        await api.reviewPeriods.managerReject(currentPRRequest.id, prDecisionComment);
+        alert('Запрос отклонен');
+      }
       setShowPRDecisionModal(false);
       setCurrentPRRequest(null);
       setPrDecisionComment('');
@@ -173,16 +183,36 @@ const ManagerDashboard = ({ user, onLogout }) => {
     const latestRequest = pendingPRRequests[0];
     notifications.push({
       id: 1,
-      text: `${latestRequest.employee_name} запрашивает досрочное начало Performance Review`,
-      time: new Date(latestRequest.early_request_date).toLocaleDateString(),
+      text: `${latestRequest.first_name} ${latestRequest.last_name} запрашивает досрочное начало Performance Review`,
+      time: new Date(latestRequest.requested_early_at).toLocaleDateString('ru-RU'),
       action: () => handleManagerPRDecision(latestRequest, true)
+    });
+  }
+  
+  // Уведомление о сотрудниках, готовых к оценке по целям
+  if (readyForManagerEvaluation.length > 0) {
+    notifications.push({
+      id: 2,
+      text: `${readyForManagerEvaluation.length} ${readyForManagerEvaluation.length === 1 ? 'сотрудник готов' : 'сотрудников готовы'} к оценке по целям`,
+      time: 'Сейчас',
+      action: () => navigate('/manager-evaluation')
+    });
+  }
+  
+  // Уведомление о сотрудниках, готовых к оценке потенциала
+  if (readyForPotentialAssessment.length > 0) {
+    notifications.push({
+      id: 3,
+      text: `${readyForPotentialAssessment.length} ${readyForPotentialAssessment.length === 1 ? 'сотрудник готов' : 'сотрудников готовы'} к оценке потенциала`,
+      time: 'Сейчас',
+      action: () => navigate('/potential-assessment')
     });
   }
   
   // Уведомление о целях на утверждении
   if (pendingCount > 0) {
     notifications.push({
-      id: 2,
+      id: 4,
       text: `${pendingCount} ${pendingCount === 1 ? 'цель требует' : 'целей требуют'} утверждения`,
       time: 'Сейчас',
       action: () => handleFilterAndScroll('submitted')
@@ -193,31 +223,12 @@ const ManagerDashboard = ({ user, onLogout }) => {
   if (pendingReviews.length > 0) {
     const latestReview = pendingReviews[0];
     notifications.push({
-      id: 3,
+      id: 5,
       text: `${latestReview.requester_first_name} ${latestReview.requester_last_name} запрашивает вашу оценку`,
       time: new Date(latestReview.created_at).toLocaleDateString(),
       action: () => navigate('/peer-feedback?tab=pending')
     });
   }
-  
-  // Напоминание о необходимости провести оценку подчиненных
-  const needsEvaluation = teamGoals.filter(g => g.status === 'approved').length > 0;
-  if (needsEvaluation) {
-    notifications.push({
-      id: 4,
-      text: 'Необходимо провести оценку сотрудников',
-      time: '2 дня назад',
-      action: () => navigate('/manager-evaluation')
-    });
-  }
-  
-  // Напоминание о самооценке
-  notifications.push({
-    id: 4,
-    text: 'Завершить свою самооценку до 25 октября',
-    time: '3 дня назад',
-    action: () => navigate('/self-assessment')
-  });
 
   return (
     <div className="dashboard">
@@ -264,39 +275,59 @@ const ManagerDashboard = ({ user, onLogout }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {reviewPeriods.map(period => {
+                  {reviewPeriods.map((period, index) => {
+                    console.log('🔍 Period в таблице:', period);
+                    
                     const startDate = new Date(period.start_date);
                     const endDate = new Date(period.end_date);
-                    const today = new Date();
-                    const isActive = period.period_status === 'active';
-                    const isUpcoming = period.period_status === 'upcoming';
-                    const isExpired = period.period_status === 'expired';
-                    const isCompleted = period.period_status === 'completed';
                     
+                    // Определяем период по датам для отображения
+                    const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
+                    const periodName = `Полугодие ${periodNum} - ${startDate.getFullYear()}`;
+                    
+                    // Определяем статус на основе реального статуса из базы
                     let statusColor = '#999';
                     let statusText = 'Не начат';
                     let statusEmoji = '⚪';
                     
-                    if (isCompleted) {
+                    if (period.potential_assessment_completed) {
+                      // Все оценки завершены - ждем результатов от HR
+                      statusColor = '#4CAF50';
+                      statusText = 'Ждём результаты';
+                      statusEmoji = '🎯';
+                    } else if (period.manager_goals_evaluation_completed) {
+                      // Оценка менеджера завершена - ждем оценку потенциала
+                      statusColor = '#9333EA';
+                      statusText = 'Оценить потенциал';
+                      statusEmoji = '⭐';
+                    } else if (period.status === 'completed') {
                       statusColor = '#4CAF50';
                       statusText = 'Завершен';
                       statusEmoji = '✅';
-                    } else if (isActive) {
+                    } else if (period.status === 'in_progress') {
                       statusColor = '#FF6B00';
-                      statusText = 'Активен';
+                      statusText = 'В процессе';
                       statusEmoji = '🔥';
-                    } else if (isUpcoming) {
-                      statusColor = '#2196F3';
-                      statusText = 'Ожидает';
-                      statusEmoji = '📅';
-                    } else if (isExpired) {
-                      statusColor = '#f44336';
-                      statusText = 'Просрочен';
-                      statusEmoji = '⚠️';
+                    } else if (period.status === 'pending_manager_approval') {
+                      statusColor = '#F59E0B';
+                      statusText = 'Ожидает руководителя';
+                      statusEmoji = '⏳';
+                    } else if (period.status === 'pending_hr_approval') {
+                      statusColor = '#3B82F6';
+                      statusText = 'Ожидает HR';
+                      statusEmoji = '�';
+                    } else if (period.status === 'rejected_by_manager') {
+                      statusColor = '#EF4444';
+                      statusText = 'Отклонен';
+                      statusEmoji = '❌';
+                    } else if (period.status === 'not_started') {
+                      statusColor = '#999';
+                      statusText = 'Не начат';
+                      statusEmoji = '⚪';
                     }
 
                     return (
-                      <tr key={period.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <tr key={period.id || `period-${period.user_id}-${index}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                         <td style={{ padding: '12px', color: '#fff' }}>
                           {period.first_name} {period.last_name}
                         </td>
@@ -304,7 +335,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
                           {period.position || 'Сотрудник'}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center', color: '#ccc', fontSize: '14px' }}>
-                          {period.period_name || `${startDate.toLocaleDateString('ru-RU')} - ${endDate.toLocaleDateString('ru-RU')}`}
+                          {periodName}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <span style={{ 
@@ -319,9 +350,31 @@ const ManagerDashboard = ({ user, onLogout }) => {
                           </span>
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
-                          {isActive ? (
+                          {period.potential_assessment_completed ? (
+                            // Все оценки завершены - показываем статус
+                            <span style={{ color: '#4CAF50', fontSize: '13px' }}>
+                              ✅ Завершено
+                            </span>
+                          ) : period.manager_goals_evaluation_completed ? (
+                            // Оценка по целям завершена - показываем кнопку для оценки потенциала
                             <button 
-                              onClick={() => navigate('/manager-evaluation')}
+                              onClick={() => navigate(`/potential-assessment/${period.user_id}/${period.id}`)}
+                              style={{
+                                padding: '6px 16px',
+                                backgroundColor: '#9333EA',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              Оценить потенциал
+                            </button>
+                          ) : period.status === 'in_progress' && period.self_assessment_completed && period.peer_reviews_count >= 3 ? (
+                            <button 
+                              onClick={() => navigate(`/manager-evaluation/${period.user_id}/${period.id}`)}
                               style={{
                                 padding: '6px 16px',
                                 backgroundColor: '#FF6B00',
@@ -335,12 +388,16 @@ const ManagerDashboard = ({ user, onLogout }) => {
                             >
                               Оценить
                             </button>
-                          ) : period.status === 'pending_approval' ? (
+                          ) : period.status === 'pending_manager_approval' ? (
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                               <button 
                                 onClick={() => {
-                                  const request = pendingPRRequests.find(r => r.user_id === period.user_id && r.period_id === period.id);
-                                  if (request) handleManagerPRDecision(request, true);
+                                  const request = pendingPRRequests.find(r => r.id === period.id && r.user_id === period.user_id);
+                                  if (request) {
+                                    handleManagerPRDecision(request, true);
+                                  } else {
+                                    console.error('Запрос не найден. Period:', period, 'Requests:', pendingPRRequests);
+                                  }
                                 }}
                                 style={{
                                   padding: '6px 12px',
@@ -357,8 +414,12 @@ const ManagerDashboard = ({ user, onLogout }) => {
                               </button>
                               <button 
                                 onClick={() => {
-                                  const request = pendingPRRequests.find(r => r.user_id === period.user_id && r.period_id === period.id);
-                                  if (request) handleManagerPRDecision(request, false);
+                                  const request = pendingPRRequests.find(r => r.id === period.id && r.user_id === period.user_id);
+                                  if (request) {
+                                    handleManagerPRDecision(request, false);
+                                  } else {
+                                    console.error('Запрос не найден. Period:', period, 'Requests:', pendingPRRequests);
+                                  }
                                 }}
                                 style={{
                                   padding: '6px 12px',
@@ -374,7 +435,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
                                 Отклонить
                               </button>
                             </div>
-                          ) : (period.period_status === 'not_started' || period.period_status === 'upcoming') && period.status !== 'pending_approval' && period.status !== 'manager_approved' ? (
+                          ) : period.status === 'not_started' ? (
                             <button 
                               onClick={() => handleRequestEarlyPR(period)}
                               style={{
@@ -390,8 +451,12 @@ const ManagerDashboard = ({ user, onLogout }) => {
                             >
                               Запросить ранний PR
                             </button>
-                          ) : period.status === 'manager_approved' ? (
-                            <span style={{ color: '#FFA366', fontSize: '13px' }}>Ожидает одобрения HR</span>
+                          ) : period.status === 'pending_hr_approval' ? (
+                            <span style={{ color: '#3B82F6', fontSize: '13px' }}>Ожидает одобрения HR</span>
+                          ) : period.status === 'in_progress' ? (
+                            <span style={{ color: '#FFA366', fontSize: '13px' }}>
+                              PR в процессе ({period.peer_reviews_count || 0}/3 отзывов)
+                            </span>
                           ) : (
                             <span style={{ color: '#666', fontSize: '13px' }}>—</span>
                           )}

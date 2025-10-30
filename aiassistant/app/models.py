@@ -4,8 +4,6 @@ from typing import List, Optional
 
 class Goal(BaseModel):
     """Модель цели сотрудника"""
-    goal_title: str
-    goal_description: str
     result_achievement_rating: int
     personal_qualities_comment: str
     personal_contribution_comment: str
@@ -18,14 +16,10 @@ class PeerReview(BaseModel):
     """Модель обратной связи от коллеги"""
     author: str
     position: str
-    technical_skills: int
-    communication: int
-    teamwork: int
-    problem_solving: int
-    initiative: int
-    strengths: str
-    areas_for_improvement: str
-    additional_comments: str
+    personal_qualities: str
+    improvement_suggestions: str
+    result_achievement_rating: int
+    interaction_quality_rating: int
 
 
 class ManagerSummarizeRequest(BaseModel):

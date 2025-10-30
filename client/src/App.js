@@ -102,8 +102,19 @@ function App() {
               <ManagerEvaluation user={user} onLogout={handleLogout} />
             </ProtectedRoute>
           } />
+          <Route path="/manager-evaluation/:employeeId/:periodId" element={
+            <ProtectedRoute allowedRoles={['manager']}>
+              <ManagerEvaluation user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
           
           <Route path="/potential-assessment" element={
+            <ProtectedRoute allowedRoles={['manager']}>
+              <PotentialAssessment user={user} onLogout={handleLogout} />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/potential-assessment/:employeeId/:periodId" element={
             <ProtectedRoute allowedRoles={['manager']}>
               <PotentialAssessment user={user} onLogout={handleLogout} />
             </ProtectedRoute>

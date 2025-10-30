@@ -145,6 +145,39 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== SELF-ASSESSMENT ENDPOINT ====================
+app.get('/api/self-assessment/employee/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId);
+    const periodId = req.query.periodId ? parseInt(req.query.periodId) : null;
+    
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+    
+    let queryText, params;
+    
+    if (periodId) {
+      // Если указан periodId, получаем cycle_id из периода
+      queryText = `
+        SELECT sa.* 
+        FROM self_assessments sa
+        JOIN employee_review_periods erp ON erp.cycle_id = sa.cycle_id
+        WHERE sa.user_id = $1 AND erp.id = $2
+        ORDER BY sa.id DESC
+      `;
+      params = [employeeId, periodId];
+    } else {
+      // Без periodId - все самооценки
+      queryText = `SELECT * FROM self_assessments WHERE user_id = $1 ORDER BY id DESC`;
+      params = [employeeId];
+    }
+    
+    const result = await query(queryText, params);
+    res.json(result.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Получение всех пользователей
 app.get('/api/users', authenticateToken, async (req, res) => {
   try {
@@ -560,6 +593,31 @@ app.post('/api/peer-feedback/request', authenticateToken, async (req, res) => {
       RETURNING *
     `, [req.user.id, reviewer_id, period_id, message || null]);
 
+    // Получаем данные запросившего и период для уведомления
+    const requesterData = await query(`
+      SELECT u.first_name, u.last_name, erp.name as period_name
+      FROM users u
+      JOIN employee_review_periods erp ON erp.id = $1
+      WHERE u.id = $2
+    `, [period_id, req.user.id]);
+
+    if (requesterData.rows.length > 0) {
+      const requester = requesterData.rows[0];
+      
+      // Создаем уведомление для коллеги
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        reviewer_id,
+        'peer_feedback_request',
+        'Запрос на оценку',
+        `${requester.first_name} ${requester.last_name} запросил у вас peer review для периода "${requester.period_name}"`,
+        req.user.id,
+        result.rows[0].id
+      ]);
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Ошибка при создании запроса на оценку:', error);
@@ -582,6 +640,7 @@ app.get('/api/peer-feedback/my-requests', authenticateToken, async (req, res) =>
       JOIN users u ON r.reviewer_id = u.id
       JOIN employee_review_periods erp ON r.period_id = erp.id
       WHERE r.requester_id = $1
+        AND erp.status = 'in_progress'
       ORDER BY r.created_at DESC
     `, [req.user.id]);
 
@@ -606,7 +665,9 @@ app.get('/api/peer-feedback/pending-reviews', authenticateToken, async (req, res
       FROM peer_feedback_requests r
       JOIN users u ON r.requester_id = u.id
       JOIN employee_review_periods erp ON r.period_id = erp.id
-      WHERE r.reviewer_id = $1 AND r.status = 'pending'
+      WHERE r.reviewer_id = $1 
+        AND r.status = 'pending'
+        AND erp.status = 'in_progress'
       ORDER BY r.created_at DESC
     `, [req.user.id]);
 
@@ -671,6 +732,55 @@ app.post('/api/peer-feedback/submit', authenticateToken, async (req, res) => {
       WHERE id = $1
     `, [request_id]);
 
+    // Проверяем, все ли peer отзывы получены для этого периода
+    const allRequestsCheck = await query(`
+      SELECT 
+        COUNT(*) as total_requests,
+        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_requests
+      FROM peer_feedback_requests
+      WHERE requester_id = $1 AND period_id = $2
+    `, [request.requester_id, request.period_id]);
+
+    const { total_requests, completed_requests } = allRequestsCheck.rows[0];
+
+    // Если все отзывы получены
+    if (parseInt(total_requests) > 0 && parseInt(total_requests) === parseInt(completed_requests)) {
+      // Обновляем поле peer_reviews_completed
+      await query(`
+        UPDATE employee_review_periods
+        SET peer_reviews_completed = true
+        WHERE id = $1
+      `, [request.period_id]);
+
+      // Получаем данные сотрудника и его менеджера
+      const employeeData = await query(`
+        SELECT 
+          u.first_name, u.last_name, u.manager_id,
+          erp.name as period_name
+        FROM users u
+        JOIN employee_review_periods erp ON erp.id = $1
+        WHERE u.id = $2
+      `, [request.period_id, request.requester_id]);
+
+      if (employeeData.rows.length > 0) {
+        const employee = employeeData.rows[0];
+        
+        // Отправляем уведомление менеджеру
+        if (employee.manager_id) {
+          await query(`
+            INSERT INTO notifications (user_id, type, title, message, related_user_id, is_read, created_at)
+            VALUES ($1, $2, $3, $4, $5, false, NOW())
+          `, [
+            employee.manager_id,
+            'peer_reviews_completed',
+            'Все peer отзывы получены',
+            `${employee.first_name} ${employee.last_name} получил все peer отзывы для периода "${employee.period_name}". Можно переходить к оценке руководителя.`,
+            request.requester_id
+          ]);
+        }
+      }
+    }
+
     res.json(feedbackResult.rows[0]);
   } catch (error) {
     console.error('Ошибка при отправке оценки:', error);
@@ -704,6 +814,7 @@ app.get('/api/peer-feedback/received', authenticateToken, async (req, res) => {
 app.get('/api/peer-feedback/employee/:employeeId', authenticateToken, async (req, res) => {
   try {
     const employeeId = parseInt(req.params.employeeId, 10);
+    const periodId = req.query.periodId ? parseInt(req.query.periodId) : null;
 
     // Проверяем права: менеджер сотрудника, HR или админ
     const emp = await query(`SELECT manager_id FROM users WHERE id = $1`, [employeeId]);
@@ -716,7 +827,7 @@ app.get('/api/peer-feedback/employee/:employeeId', authenticateToken, async (req
       return res.status(403).json({ error: 'Доступ запрещен' });
     }
 
-    const result = await query(`
+    let queryText = `
       SELECT 
         f.*,
         u.first_name as reviewer_first_name,
@@ -726,9 +837,18 @@ app.get('/api/peer-feedback/employee/:employeeId', authenticateToken, async (req
       FROM peer_feedbacks f
       JOIN users u ON f.reviewer_id = u.id
       JOIN employee_review_periods erp ON f.period_id = erp.id
-      WHERE f.requester_id = $1
-      ORDER BY f.created_at DESC
-    `, [employeeId]);
+      WHERE f.requester_id = $1`;
+    
+    let params = [employeeId];
+    
+    if (periodId) {
+      queryText += ` AND f.period_id = $2`;
+      params.push(periodId);
+    }
+    
+    queryText += ` ORDER BY f.created_at DESC`;
+
+    const result = await query(queryText, params);
 
     res.json(result.rows);
   } catch (error) {
@@ -742,6 +862,8 @@ app.get('/api/peer-feedback/employee/:employeeId', authenticateToken, async (req
 // Создать оценку сотрудника от менеджера
 app.post('/api/manager-evaluation/submit', authenticateToken, async (req, res) => {
   try {
+    console.log('📝 Получен запрос на сохранение оценки:', JSON.stringify(req.body, null, 2));
+    
     const {
       goal_id,
       employee_id,
@@ -752,23 +874,32 @@ app.post('/api/manager-evaluation/submit', authenticateToken, async (req, res) =
       interaction_quality_rating,
       improvement_suggestions,
       overall_rating,
-      feedback_summary
+      feedback_summary,
+      period_id // добавляем period_id для обновления статуса
     } = req.body;
 
-    if (!goal_id || !employee_id || !cycle_id) {
-      return res.status(400).json({ error: 'Не указаны обязательные поля' });
+    console.log(`🔍 Проверка полей: employee_id=${employee_id}, cycle_id=${cycle_id}, period_id=${period_id}`);
+
+    if (!employee_id || !cycle_id) {
+      console.log('❌ Не указаны обязательные поля');
+      return res.status(400).json({ error: 'Не указаны обязательные поля (employee_id, cycle_id)' });
     }
 
     // Проверяем, что текущий пользователь - менеджер сотрудника
+    console.log(`🔍 Проверка, что пользователь ${req.user.id} является менеджером сотрудника ${employee_id}`);
     const employeeCheck = await query(`
       SELECT * FROM users WHERE id = $1 AND manager_id = $2
     `, [employee_id, req.user.id]);
 
     if (employeeCheck.rows.length === 0) {
+      console.log('❌ Пользователь не является менеджером');
       return res.status(403).json({ error: 'Вы не являетесь менеджером этого сотрудника' });
     }
 
+    console.log('✅ Проверка менеджера пройдена');
+
     // Проверяем, есть ли уже оценка
+    console.log('🔍 Проверка существующей оценки...');
     const existingEval = await query(`
       SELECT * FROM manager_evaluations 
       WHERE goal_id = $1 AND employee_id = $2 AND manager_id = $3 AND cycle_id = $4
@@ -776,6 +907,7 @@ app.post('/api/manager-evaluation/submit', authenticateToken, async (req, res) =
 
     let result;
     if (existingEval.rows.length > 0) {
+      console.log('♻️ Обновление существующей оценки...');
       // Обновляем существующую оценку
       result = await query(`
         UPDATE manager_evaluations SET
@@ -799,7 +931,9 @@ app.post('/api/manager-evaluation/submit', authenticateToken, async (req, res) =
         feedback_summary,
         existingEval.rows[0].id
       ]);
+      console.log('✅ Оценка обновлена');
     } else {
+      console.log('➕ Создание новой оценки...');
       // Создаем новую оценку
       result = await query(`
         INSERT INTO manager_evaluations (
@@ -823,12 +957,69 @@ app.post('/api/manager-evaluation/submit', authenticateToken, async (req, res) =
         overall_rating,
         feedback_summary
       ]);
+      console.log('✅ Новая оценка создана');
     }
 
+    // Обновляем статус завершения оценки по целям в периоде
+    console.log('🔄 Обновление статуса периода...');
+    // Используем period_id из запроса или получаем из employee_review_periods
+    let actualPeriodId = period_id;
+    
+    if (!actualPeriodId) {
+      // Если period_id не передан, находим период по employee_id и cycle_id
+      const periodResult = await query(`
+        SELECT id FROM employee_review_periods 
+        WHERE user_id = $1 AND cycle_id = $2 AND status = 'in_progress'
+      `, [employee_id, cycle_id]);
+      
+      if (periodResult.rows.length > 0) {
+        actualPeriodId = periodResult.rows[0].id;
+      }
+    }
+    
+    if (actualPeriodId) {
+      await query(`
+        UPDATE employee_review_periods
+        SET manager_goals_evaluation_completed = true,
+            manager_goals_evaluation_completed_at = NOW()
+        WHERE id = $1 AND user_id = $2
+      `, [actualPeriodId, employee_id]);
+      
+      console.log('✅ Статус периода обновлен');
+      
+      // Получаем информацию о сотруднике и менеджере для уведомления
+      const empInfo = await query(`
+        SELECT u.first_name, u.last_name, u.manager_id,
+               m.first_name as manager_first_name, m.last_name as manager_last_name
+        FROM users u
+        LEFT JOIN users m ON u.manager_id = m.id
+        WHERE u.id = $1
+      `, [employee_id]);
+      
+      if (empInfo.rows.length > 0 && empInfo.rows[0].manager_id) {
+        // Создаем уведомление менеджеру о готовности к оценке потенциала
+        await query(`
+          INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+        `, [
+          req.user.id, // уведомление самому менеджеру
+          'potential_assessment_ready',
+          'Готово к оценке потенциала',
+          `${empInfo.rows[0].first_name} ${empInfo.rows[0].last_name} готов к оценке потенциала`,
+          employee_id,
+          actualPeriodId // используем actualPeriodId
+        ]);
+        
+        console.log(`✅ Создано уведомление об оценке потенциала для ${empInfo.rows[0].first_name} ${empInfo.rows[0].last_name}`);
+      }
+    }
+
+    console.log('🎉 Оценка успешно сохранена');
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Ошибка при создании оценки менеджера:', error);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    console.error('❌ Ошибка при создании оценки менеджера:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ error: 'Ошибка сервера: ' + error.message });
   }
 });
 
@@ -886,7 +1077,116 @@ app.get('/api/manager-evaluation/employee/:employeeId', authenticateToken, async
   }
 });
 
+// Получить список сотрудников, готовых к оценке менеджером
+app.get('/api/manager-evaluation/ready-employees', authenticateToken, async (req, res) => {
+  try {
+    console.log('🎯 Запрос ready-employees от:', req.user.email, 'роль:', req.user.role);
+    
+    if (req.user.role !== 'manager' && req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const managerId = req.user.role === 'manager' ? req.user.id : null;
+    
+    let whereClause = '';
+    let params = [];
+    
+    if (managerId) {
+      whereClause = 'AND u.manager_id = $1';
+      params = [managerId];
+    }
+
+    // Получаем сотрудников с активными периодами, где:
+    // 1. Период в статусе 'in_progress'
+    // 2. Самооценка завершена
+    // 3. Получено минимум 3 peer отзыва
+    // 4. Оценка менеджера НЕ завершена
+    const result = await query(`
+      SELECT 
+        erp.id as period_id,
+        erp.cycle_id as cycle_id,
+        erp.user_id,
+        u.first_name,
+        u.last_name,
+        u.position,
+        erp.start_date,
+        erp.end_date,
+        erp.name as cycle_name,
+        (SELECT COUNT(*) FROM peer_feedback_requests 
+         WHERE requester_id = erp.user_id AND period_id = erp.id AND status = 'completed') as peer_reviews_count
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.status = 'in_progress'
+        AND erp.self_assessment_completed = true
+        AND erp.peer_reviews_completed = true
+        AND COALESCE(erp.manager_goals_evaluation_completed, false) = false
+        ${whereClause}
+      ORDER BY u.last_name, u.first_name
+    `, params);
+
+    console.log(`✅ Найдено готовых к оценке: ${result.rows.length}`);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения готовых к оценке сотрудников:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // ============= ОЦЕНКА ПОТЕНЦИАЛА СОТРУДНИКА =============
+
+// Получить список сотрудников готовых к оценке потенциала
+app.get('/api/potential-assessment/ready-employees', authenticateToken, async (req, res) => {
+  try {
+    console.log('🎯 Запрос ready-employees для оценки потенциала от:', req.user.email);
+    
+    if (req.user.role !== 'manager' && req.user.role !== 'hr' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Доступ запрещен' });
+    }
+
+    const managerId = req.user.role === 'manager' ? req.user.id : null;
+    
+    let whereClause = '';
+    let params = [];
+    
+    if (managerId) {
+      whereClause = 'AND u.manager_id = $1';
+      params = [managerId];
+    }
+
+    // Получаем сотрудников готовых к оценке потенциала:
+    // 1. Период в статусе 'in_progress'
+    // 2. Самооценка завершена
+    // 3. Получено минимум 3 peer отзыва
+    // 4. Оценка по целям менеджера ЗАВЕРШЕНА
+    // 5. Оценка потенциала ЕЩЁ НЕ ЗАВЕРШЕНА
+    const result = await query(`
+      SELECT 
+        erp.id as period_id,
+        erp.cycle_id as cycle_id,
+        erp.user_id as employee_id,
+        CONCAT(u.first_name, ' ', u.last_name) as employee_name,
+        u.first_name,
+        u.last_name,
+        u.position,
+        erp.name as cycle_name
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.status = 'in_progress'
+        AND erp.self_assessment_completed = true
+        AND erp.peer_reviews_completed = true
+        AND erp.manager_goals_evaluation_completed = true
+        AND erp.potential_assessment_completed = false
+        ${whereClause}
+      ORDER BY u.last_name, u.first_name
+    `, params);
+
+    console.log(`✅ Найдено готовых к оценке потенциала: ${result.rows.length}`);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения готовых к оценке потенциала:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
 
 // Создать/обновить оценку потенциала
 app.post('/api/potential-assessment/submit', authenticateToken, async (req, res) => {
@@ -921,36 +1221,30 @@ app.post('/api/potential-assessment/submit', authenticateToken, async (req, res)
     // Расчет РЕЗУЛЬТАТИВНОСТИ (0-8 баллов)
     let performance_raw_score = 0;
     
-    // Профессиональные качества (позитивные, +1 за каждое)
+    // Профессиональные качества (позитивные, +1 за каждое отмеченное)
     if (prof_responsibility) performance_raw_score += 1;
     if (prof_result_oriented) performance_raw_score += 1;
     if (prof_proactivity) performance_raw_score += 1;
     if (prof_open_mindset) performance_raw_score += 1;
     if (prof_team_player) performance_raw_score += 1;
     
-    // Дискоммуникация (негативный, +1 если НЕТ проблем)
+    // Дискоммуникация (если галочка стоит = есть проблемы = 0 баллов, если не стоит = нет проблем = +1 балл)
     if (!knows_miscommunication_cases) performance_raw_score += 1;
     
-    // ОЛЭ приоритеты
+    // ОЛЭ приоритеты (за каждую указанную)
     if (ole_priority_1) performance_raw_score += 1;
     if (ole_priority_2) performance_raw_score += 1;
-
-    // Итоговая оценка результативности: 4 = 1★, 5-7 = 2★, 8-11 = 3★
-    let performance_final_score = 1;
-    if (performance_raw_score >= 8) performance_final_score = 3;
-    else if (performance_raw_score >= 5) performance_final_score = 2;
-    else if (performance_raw_score >= 4) performance_final_score = 1;
     
     // Расчет ПОТЕНЦИАЛА (0-12 баллов)
     let potential_raw_score = 0;
     
-    // Личные качества (негативные, +1 если проблем НЕ было)
-    if (!pers_took_responsibility) potential_raw_score += 1;
-    if (!pers_transparent_communication) potential_raw_score += 1;
-    if (!pers_shared_info) potential_raw_score += 1;
-    if (!pers_organized_work) potential_raw_score += 1;
+    // Личные качества (позитивные, +1 за каждое отмеченное)
+    if (pers_took_responsibility) potential_raw_score += 1;
+    if (pers_transparent_communication) potential_raw_score += 1;
+    if (pers_shared_info) potential_raw_score += 1;
+    if (pers_organized_work) potential_raw_score += 1;
     
-    // Мотивация 1:1 (негативный, +1 если НЕ приходилось)
+    // Мотивация 1:1 (если галочка стоит = приходилось мотивировать = 0 баллов, если не стоит = не приходилось = +1 балл)
     if (!had_motivation_one_on_one) potential_raw_score += 1;
     
     // Желание развиваться (0-1 балл)
@@ -971,11 +1265,18 @@ app.post('/api/potential-assessment/submit', authenticateToken, async (req, res)
     else if (risk <= 5) potential_raw_score += 2;
     else if (risk <= 7) potential_raw_score += 1;
 
-    // Итоговая оценка потенциала: 1-7 = 1★, 8-12 = 2★, 13-16 = 3★
+    // Итоговая оценка результативности: 4 = 1★, 5-7 = 2★, 8 = 3★ (максимум 8 баллов)
+    let performance_final_score = 1;
+    if (performance_raw_score >= 8) performance_final_score = 3;
+    else if (performance_raw_score >= 5) performance_final_score = 2;
+    else if (performance_raw_score >= 4) performance_final_score = 1;
+    else performance_final_score = 0; // меньше 4 баллов = 0★
+
+    // Итоговая оценка потенциала: 1-7 = 1★, 8-12 = 2★, больше 12 невозможно (максимум 12 баллов)
     let potential_final_score = 1;
-    if (potential_raw_score >= 13) potential_final_score = 3;
-    else if (potential_raw_score >= 8) potential_final_score = 2;
+    if (potential_raw_score >= 8) potential_final_score = 2;
     else if (potential_raw_score >= 1) potential_final_score = 1;
+    else potential_final_score = 0; // 0 баллов = 0★
 
     // Проверяем, существует ли уже оценка
     const existing = await query(`
@@ -1052,6 +1353,17 @@ app.post('/api/potential-assessment/submit', authenticateToken, async (req, res)
         potential_raw_score, potential_final_score
       ]);
     }
+
+    // Обновляем флаг завершения оценки потенциала в периоде
+    await query(`
+      UPDATE employee_review_periods 
+      SET potential_assessment_completed = true
+      WHERE user_id = $1 AND cycle_id = $2 AND status = 'in_progress'
+    `, [employee_id, cycle_id]);
+
+    console.log(`✅ Оценка потенциала сохранена для employee_id=${employee_id}, cycle_id=${cycle_id}`);
+    console.log(`   Результативность: ${performance_raw_score} баллов (оценка: ${performance_final_score}★)`);
+    console.log(`   Потенциал: ${potential_raw_score} баллов (оценка: ${potential_final_score}★)`);
 
     res.json({ 
       message: 'Оценка потенциала успешно сохранена',
@@ -1862,42 +2174,62 @@ app.get('/api/manager/team-employee-periods', authenticateToken, async (req, res
     let params = [];
     
     if (managerId) {
-      // Для менеджера - только его команда
-      whereClause = 'WHERE u.manager_id = $1 AND CURRENT_DATE >= erp.start_date AND CURRENT_DATE <= erp.end_date';
+      // Для менеджера - только его команда, все периоды
+      whereClause = 'WHERE u.manager_id = $1';
       params = [managerId];
     } else {
-      // Для HR/Admin - все сотрудники, только текущие периоды
-      whereClause = 'WHERE CURRENT_DATE >= erp.start_date AND CURRENT_DATE <= erp.end_date';
+      // Для HR/Admin - все сотрудники, все периоды
+      whereClause = '';
     }
 
     const result = await query(`
-      SELECT 
+      SELECT DISTINCT ON (erp.user_id)
         erp.id,
         erp.user_id,
         u.first_name,
         u.last_name,
         u.position,
         u.role,
-        erp.name as period_name,
         erp.start_date,
         erp.end_date,
-        prs.status,
-        prs.early_request_date,
-        prs.manager_approved_date,
-        prs.hr_approved_date,
+        erp.status,
+        erp.cycle_id,
+        erp.requested_early_at as early_request_date,
+        erp.manager_approved_at as manager_approved_date,
+        erp.hr_approved_at as hr_approved_date,
+        erp.self_assessment_completed,
+        (SELECT COUNT(*) FROM peer_feedback_requests 
+         WHERE requester_id = erp.user_id AND period_id = erp.id AND status = 'completed') as peer_reviews_count,
+        erp.manager_evaluation_completed,
+        erp.manager_goals_evaluation_completed,
+        erp.potential_assessment_completed,
+        erp.peer_reviews_completed,
         CASE 
           WHEN CURRENT_DATE < erp.start_date THEN 'upcoming'
           WHEN CURRENT_DATE > erp.end_date THEN 'expired'
-          WHEN prs.status = 'completed' THEN 'completed'
-          WHEN prs.status = 'available' OR prs.status = 'in_progress' THEN 'active'
+          WHEN erp.status = 'completed' THEN 'completed'
+          WHEN erp.status = 'in_progress' THEN 'active'
           ELSE 'not_started'
         END as period_status
       FROM employee_review_periods erp
       JOIN users u ON erp.user_id = u.id
-      LEFT JOIN performance_review_status prs ON prs.user_id = erp.user_id AND prs.period_id = erp.id
       ${whereClause}
-      ORDER BY u.last_name, u.first_name, erp.start_date
+      ORDER BY 
+        erp.user_id,
+        CASE 
+          WHEN erp.status = 'pending_manager_approval' THEN 1
+          WHEN erp.status = 'pending_hr_approval' THEN 2
+          WHEN erp.status = 'in_progress' THEN 3
+          WHEN CURRENT_DATE BETWEEN erp.start_date AND erp.end_date THEN 4
+          ELSE 5
+        END,
+        erp.start_date DESC
     `, params);
+
+    console.log('🔍 Возвращаем периоды для менеджера:', result.rows.length, 'штук');
+    result.rows.forEach(row => {
+      console.log(`  - ID ${row.id}: ${row.first_name} ${row.last_name}, status=${row.status}, period_status=${row.period_status}`);
+    });
 
     res.json(result.rows);
   } catch (error) {
@@ -2784,6 +3116,430 @@ app.post('/api/recommendations/mark-read/:id', authenticateToken, async (req, re
   }
 });
 
+// ==================== EARLY PR WORKFLOW ENDPOINTS ====================
+
+// 1. Запрос раннего PR от сотрудника
+app.post('/api/review-periods/:periodId/request-early', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const userId = req.user.id;
+
+    const period = await query(
+      'SELECT * FROM employee_review_periods WHERE id = $1 AND user_id = $2',
+      [periodId, userId]
+    );
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'pending_manager_approval',
+          requested_early_at = NOW()
+      WHERE id = $1
+    `, [periodId]);
+
+    const userInfo = await query(
+      'SELECT u.*, m.id as manager_id FROM users u LEFT JOIN users m ON u.manager_id = m.id WHERE u.id = $1',
+      [userId]
+    );
+
+    if (userInfo.rows[0].manager_id) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        userInfo.rows[0].manager_id,
+        'early_pr_request',
+        'Запрос раннего Performance Review',
+        `${userInfo.rows[0].first_name} ${userInfo.rows[0].last_name} запросил ранний Performance Review`,
+        userId,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true, message: 'Запрос отправлен руководителю' });
+  } catch (error) {
+    console.error('Error requesting early PR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Утверждение руководителем
+app.post('/api/review-periods/:periodId/manager-approve', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const managerId = req.user.id;
+
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name, u.id as employee_id
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1 AND u.manager_id = $2
+    `, [periodId, managerId]);
+
+    if (period.rows.length === 0) {
+      return res.status(403).json({ error: 'Вы не руководитель этого сотрудника' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'pending_hr_approval',
+          manager_approved = true,
+          manager_approved_at = NOW(),
+          manager_approved_by = $1
+      WHERE id = $2
+    `, [managerId, periodId]);
+
+    const hrUsers = await query('SELECT id FROM users WHERE role = $1', ['hr']);
+
+    for (const hr of hrUsers.rows) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        hr.id,
+        'early_pr_hr_approval',
+        'Требуется утверждение раннего PR',
+        `Руководитель утвердил ранний PR для ${period.rows[0].first_name} ${period.rows[0].last_name}`,
+        period.rows[0].employee_id,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true, message: 'Отправлено HR на утверждение' });
+  } catch (error) {
+    console.error('Error approving by manager:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. Отклонение руководителем
+app.post('/api/review-periods/:periodId/manager-reject', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const managerId = req.user.id;
+    const { reason } = req.body;
+
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name, u.id as employee_id
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1 AND u.manager_id = $2
+    `, [periodId, managerId]);
+
+    if (period.rows.length === 0) {
+      return res.status(403).json({ error: 'Вы не руководитель этого сотрудника' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'not_started',
+          requested_early_at = NULL,
+          manager_approved = false,
+          manager_approved_at = NULL,
+          manager_approved_by = NULL
+      WHERE id = $1
+    `, [periodId]);
+
+    await query(`
+      INSERT INTO notifications (user_id, type, title, message, related_id, is_read, created_at)
+      VALUES ($1, $2, $3, $4, $5, false, NOW())
+    `, [
+      period.rows[0].employee_id,
+      'early_pr_rejected',
+      '❌ Запрос на досрочный Performance Review отклонен',
+      `Руководитель отклонил ваш запрос на досрочное начало Performance Review.\n\nПричина: ${reason || 'не указана'}\n\nВы можете подать новый запрос после устранения указанных замечаний.`,
+      periodId
+    ]);
+
+    res.json({ success: true, message: 'Запрос отклонен' });
+  } catch (error) {
+    console.error('Error rejecting by manager:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. Утверждение HR
+app.post('/api/review-periods/:periodId/hr-approve', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ error: 'Только HR может утверждать' });
+    }
+
+    const period = await query(`
+      SELECT erp.*, u.first_name, u.last_name, u.id as employee_id
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1
+    `, [periodId]);
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'in_progress',
+          hr_approved = true,
+          hr_approved_at = NOW(),
+          hr_approved_by = $1
+      WHERE id = $2
+    `, [req.user.id, periodId]);
+
+    await query(`
+      INSERT INTO notifications (user_id, type, title, message, related_id, is_read, created_at)
+      VALUES ($1, $2, $3, $4, $5, false, NOW())
+    `, [
+      period.rows[0].employee_id,
+      'early_pr_approved',
+      'Ранний PR утвержден',
+      'Ваш запрос утвержден. Приступайте к самооценке и запросам обратной связи.',
+      periodId
+    ]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error approving by HR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4.5. Отклонение HR
+app.post('/api/review-periods/:periodId/hr-reject', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const { reason } = req.body;
+
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ error: 'Только HR может отклонять' });
+    }
+
+    const period = await query(`
+      SELECT erp.*, u.first_name, u.last_name, u.id as employee_id
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1
+    `, [periodId]);
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    // Откатываем статус на pending_manager_approval
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'pending_manager_approval',
+          hr_approved = false,
+          hr_approved_at = NULL,
+          hr_approved_by = NULL
+      WHERE id = $1
+    `, [periodId]);
+
+    // Уведомляем сотрудника
+    await query(`
+      INSERT INTO notifications (user_id, type, title, message, related_id, is_read, created_at)
+      VALUES ($1, $2, $3, $4, $5, false, NOW())
+    `, [
+      period.rows[0].employee_id,
+      'early_pr_rejected_by_hr',
+      '❌ HR отклонил запрос на досрочный Performance Review',
+      `HR отклонил ваш запрос на досрочное начало Performance Review.\n\nПричина: ${reason || 'не указана'}\n\nСвяжитесь с HR для уточнения деталей.`,
+      periodId
+    ]);
+
+    res.json({ success: true, message: 'Запрос отклонен' });
+  } catch (error) {
+    console.error('Error rejecting by HR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5. Получение своих периодов
+app.get('/api/review-periods/my', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        erp.*,
+        (SELECT COUNT(*) FROM peer_feedback_requests 
+         WHERE requester_id = erp.user_id AND period_id = erp.id AND status = 'completed') as peer_reviews_count
+      FROM employee_review_periods erp
+      WHERE erp.user_id = $1
+        AND (erp.status IN ('not_started', 'in_progress', 'pending_manager_approval', 'pending_hr_approval') 
+             OR erp.status = 'completed')
+      ORDER BY 
+        CASE 
+          WHEN erp.status IN ('not_started', 'in_progress', 'pending_manager_approval', 'pending_hr_approval') THEN 0
+          ELSE 1
+        END,
+        erp.start_date DESC
+      LIMIT 2
+    `, [req.user.id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting my periods:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. Периоды для утверждения руководителем
+app.get('/api/review-periods/pending-manager-approval', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        erp.*,
+        u.first_name,
+        u.last_name,
+        u.position
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE u.manager_id = $1 AND erp.status = 'pending_manager_approval'
+      ORDER BY erp.requested_early_at DESC
+    `, [req.user.id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting pending approvals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. Периоды для утверждения HR
+app.get('/api/review-periods/pending-hr-approval', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ error: 'Только для HR' });
+    }
+
+    const result = await query(`
+      SELECT 
+        erp.*,
+        u.first_name,
+        u.last_name,
+        u.position
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.status = 'pending_hr_approval'
+      ORDER BY erp.manager_approved_at DESC
+    `, []);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting HR pending approvals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 8. Завершение самооценки
+app.post('/api/review-periods/:periodId/complete-self-assessment', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1 AND erp.user_id = $2
+    `, [periodId, req.user.id]);
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET self_assessment_completed = true,
+          self_assessment_completed_at = NOW()
+      WHERE id = $1
+    `, [periodId]);
+
+    // Проверяем, набралось ли минимум 3 отзыва
+    if (period.rows[0].peer_reviews_count >= 3 && period.rows[0].manager_id) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        period.rows[0].manager_id,
+        'ready_for_manager_evaluation',
+        'Готово к оценке',
+        `${period.rows[0].first_name} ${period.rows[0].last_name} завершил самооценку и получил обратную связь`,
+        req.user.id,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error completing self assessment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 9. Обновление счетчика peer reviews
+app.post('/api/peer-feedback/:requestId/complete', authenticateToken, async (req, res) => {
+  try {
+    const requestId = parseInt(req.params.requestId);
+
+    const request = await query(
+      'SELECT * FROM peer_feedback_requests WHERE id = $1 AND reviewer_id = $2',
+      [requestId, req.user.id]
+    );
+
+    if (request.rows.length === 0) {
+      return res.status(404).json({ error: 'Запрос не найден' });
+    }
+
+    await query(`
+      UPDATE peer_feedback_requests
+      SET status = 'completed',
+          completed_at = NOW()
+      WHERE id = $1
+    `, [requestId]);
+
+    // Обновляем счетчик
+    await query(`
+      UPDATE employee_review_periods
+      SET peer_reviews_count = (
+        SELECT COUNT(*) FROM peer_feedback_requests 
+        WHERE requester_id = $1 AND period_id = $2 AND status = 'completed'
+      )
+      WHERE id = $2
+    `, [request.rows[0].requester_id, request.rows[0].period_id]);
+
+    // Проверяем условия для уведомления руководителя
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1
+    `, [request.rows[0].period_id]);
+
+    if (period.rows.length > 0 && period.rows[0].peer_reviews_count >= 3 && 
+        period.rows[0].self_assessment_completed && period.rows[0].manager_id) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        period.rows[0].manager_id,
+        'ready_for_manager_evaluation',
+        'Готово к оценке сотрудника',
+        `${period.rows[0].first_name} ${period.rows[0].last_name} готов к итоговой оценке`,
+        period.rows[0].user_id,
+        period.rows[0].id
+      ]);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error completing peer feedback:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Запуск сервера
 app.listen(PORT, () => {
   console.log(`
@@ -2817,5 +3573,12 @@ app.listen(PORT, () => {
   console.log('   GET  /api/peer-feedback/received - Полученные оценки');
   console.log('   POST /api/manager-evaluation/submit - Оценка сотрудника менеджером');
   console.log('   GET  /api/manager-evaluation/employee/:id/cycle/:id - Оценки сотрудника');
+  console.log('   POST /api/review-periods/:id/request-early - Запросить ранний PR');
+  console.log('   POST /api/review-periods/:id/manager-approve - Утвердить (руководитель)');
+  console.log('   POST /api/review-periods/:id/manager-reject - Отклонить (руководитель)');
+  console.log('   POST /api/review-periods/:id/hr-approve - Утвердить (HR)');
+  console.log('   GET  /api/review-periods/my - Мои периоды');
+  console.log('   GET  /api/review-periods/pending-manager-approval - Ожидают утверждения руководителя');
+  console.log('   GET  /api/review-periods/pending-hr-approval - Ожидают утверждения HR');
   console.log('   GET  /api/health - Проверка здоровья API\n');
 });

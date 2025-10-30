@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
 import './Dashboard.css';
 
 const PotentialAssessment = ({ user, onLogout }) => {
   const navigate = useNavigate();
-  const [cycles, setCycles] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [selectedCycle, setSelectedCycle] = useState('');
-  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const { employeeId, periodId } = useParams(); // Получаем параметры из URL
+  const [readyEmployees, setReadyEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [loading, setLoading] = useState(false);
   
   // Форма оценки с правильной структурой
@@ -40,36 +39,41 @@ const PotentialAssessment = ({ user, onLogout }) => {
     ole_priority_2: ''
   });
 
-  const loadInitialData = async () => {
+  const loadReadyEmployees = async () => {
     try {
-      const [cyclesData, usersData] = await Promise.all([
-        api.cycles.getAll(),
-        api.users.getAll()
-      ]);
-      
-      setCycles(cyclesData);
-      const teamMembers = usersData.filter(u => u.manager_id === user.id);
-      setEmployees(teamMembers);
-      
-      const activeCycle = cyclesData.find(c => c.status === 'active');
-      if (activeCycle) {
-        setSelectedCycle(activeCycle.id);
-      }
+      setLoading(true);
+      const data = await api.get('/potential-assessment/ready-employees');
+      setReadyEmployees(data);
     } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
+      console.error('Ошибка загрузки готовых сотрудников:', error);
+      alert('Ошибка загрузки данных');
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadInitialData();
+    loadReadyEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Автоматически выбираем сотрудника, если передан в URL
+  useEffect(() => {
+    if (employeeId && periodId && readyEmployees.length > 0) {
+      const employee = readyEmployees.find(
+        emp => emp.employee_id === parseInt(employeeId) && emp.period_id === parseInt(periodId)
+      );
+      if (employee) {
+        setSelectedEmployee(employee);
+      }
+    }
+  }, [employeeId, periodId, readyEmployees]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!selectedEmployee || !selectedCycle) {
-      alert('Пожалуйста, выберите сотрудника и цикл оценки');
+    if (!selectedEmployee) {
+      alert('Пожалуйста, выберите сотрудника');
       return;
     }
 
@@ -78,15 +82,15 @@ const PotentialAssessment = ({ user, onLogout }) => {
       
       const assessmentData = {
         ...formData,
-        employee_id: parseInt(selectedEmployee),
-        cycle_id: parseInt(selectedCycle)
+        employee_id: selectedEmployee.employee_id,
+        cycle_id: selectedEmployee.cycle_id
       };
 
       const response = await api.potentialAssessment.submit(assessmentData);
       
       alert(`Оценка потенциала успешно сохранена!\n\nРезультативность: ${response.performance_raw_score} баллов (оценка: ${response.performance_final_score}★)\nПотенциал: ${response.potential_raw_score} баллов (оценка: ${response.potential_final_score}★)`);
       
-      // Сброс формы
+      // Сброс формы и обновление списка
       setFormData({
         prof_responsibility: false,
         prof_result_oriented: false,
@@ -108,7 +112,8 @@ const PotentialAssessment = ({ user, onLogout }) => {
         ole_priority_1: '',
         ole_priority_2: ''
       });
-      setSelectedEmployee('');
+      setSelectedEmployee(null);
+      loadReadyEmployees(); // Обновляем список
       
     } catch (error) {
       console.error('Ошибка при сохранении оценки:', error);
@@ -140,13 +145,13 @@ const PotentialAssessment = ({ user, onLogout }) => {
   const calculatePotentialScore = () => {
     let score = 0;
     
-    // Личные качества (негативные, +1 если галочка НЕ стоит = проблем НЕ было)
-    if (!formData.pers_took_responsibility) score += 1;
-    if (!formData.pers_transparent_communication) score += 1;
-    if (!formData.pers_shared_info) score += 1;
-    if (!formData.pers_organized_work) score += 1;
+    // Личные качества (позитивные, +1 если галочка СТОИТ = качество проявлено)
+    if (formData.pers_took_responsibility) score += 1;
+    if (formData.pers_transparent_communication) score += 1;
+    if (formData.pers_shared_info) score += 1;
+    if (formData.pers_organized_work) score += 1;
     
-    // Мотивация 1:1 (негативный, +1 если НЕ приходилось)
+    // Мотивация 1:1 (негативный, +1 если НЕ приходилось = галочка НЕ стоит)
     if (!formData.had_motivation_one_on_one) score += 1;
     
     // Желание развиваться
@@ -172,13 +177,13 @@ const PotentialAssessment = ({ user, onLogout }) => {
     if (raw >= 8) return 3;
     if (raw >= 5) return 2;
     if (raw >= 4) return 1;
-    return 1;
+    return 0; // меньше 4 баллов = 0★
   };
 
   const getPotentialFinalScore = (raw) => {
-    if (raw >= 13) return 3;
-    if (raw >= 8) return 2;
-    return 1;
+    if (raw >= 8) return 2; // максимум 2★ (максимум 12 баллов)
+    if (raw >= 1) return 1;
+    return 0; // 0 баллов = 0★
   };
 
   const getRiskColor = (risk) => {
@@ -195,7 +200,6 @@ const PotentialAssessment = ({ user, onLogout }) => {
     return 'Высокий риск (0 баллов)';
   };
 
-  const selectedEmployeeData = employees.find(e => e.id === parseInt(selectedEmployee));
   const perfRaw = calculatePerformanceScore();
   const potRaw = calculatePotentialScore();
   const perfFinal = getPerformanceFinalScore(perfRaw);
@@ -217,99 +221,169 @@ const PotentialAssessment = ({ user, onLogout }) => {
             </button>
             <div>
               <h1>Оценка потенциала сотрудника</h1>
-              <p>Детальная оценка по двум шкалам: результативность и потенциал (обновлено)</p>
+              <p>Детальная оценка по двум шкалам: результативность и потенциал</p>
             </div>
           </div>
         </div>
 
-        <div className="section-card">
-          {/* Преамбула */}
-          <div style={{ 
-            background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(247, 147, 30, 0.1) 100%)',
-            border: '1px solid var(--wink-orange)',
-            borderRadius: '8px',
-            padding: '20px',
-            marginBottom: '24px'
-          }}>
-            <h3 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>📋 Что важно учесть</h3>
-            <p style={{ margin: '12px 0', lineHeight: '1.6' }}>
-              Данный раздел необходим для общей оценки потенциала сотрудника.
-              <br/>Две шкалы: <strong>потенциал-результативность</strong>
-            </p>
-            <p style={{ margin: '12px 0', fontWeight: '600' }}>Он складывается из следующих зон:</p>
-            <ol style={{ margin: '12px 0 0 20px', lineHeight: '1.8' }}>
-              <li><strong>Результативность</strong>
-                <ul style={{ marginTop: '8px' }}>
-                  <li>Профессиональные качества (5 вопросов)</li>
-                  <li>Личные качества (4 вопроса)</li>
+        {/* Список готовых сотрудников */}
+        {!selectedEmployee ? (
+          <div className="section-card">
+            <h2 className="section-title">Готовые к оценке потенциала</h2>
+            
+            {loading ? (
+              <p style={{ color: 'var(--wink-light-gray)', textAlign: 'center', padding: '40px' }}>Загрузка...</p>
+            ) : readyEmployees.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--wink-light-gray)' }}>
+                <div style={{ fontSize: '48px', marginBottom: '20px' }}>⭐</div>
+                <h3 style={{ marginBottom: '12px', color: 'var(--wink-white)' }}>Никто не готов к оценке потенциала</h3>
+                <p style={{ marginBottom: '8px' }}>
+                  Сотрудник готов к оценке потенциала когда:
+                </p>
+                <ul style={{ textAlign: 'left', display: 'inline-block', marginTop: '16px', lineHeight: '1.8' }}>
+                  <li>Период Performance Review в процессе</li>
+                  <li>Самооценка завершена</li>
+                  <li>Получено минимум 3 отзыва от коллег</li>
+                  <li>Оценка по целям завершена руководителем</li>
                 </ul>
-              </li>
-              <li style={{ marginTop: '12px' }}><strong>Потенциал</strong> (6 вопросов + приоритеты ОЛЭ)</li>
-              <li style={{ marginTop: '8px' }}><strong>Стремление развиваться и расти</strong></li>
-            </ol>
+              </div>
+            ) : (
+              <>
+                <p style={{ color: 'var(--wink-light-gray)', marginBottom: '24px' }}>
+                  Эти сотрудники прошли оценку по целям и готовы к оценке потенциала
+                </p>
+                <div style={{ display: 'grid', gap: '16px' }}>
+                  {readyEmployees.map((emp) => (
+                    <div 
+                      key={`${emp.employee_id}-${emp.cycle_id}`}
+                      style={{
+                        padding: '20px',
+                        border: '1px solid var(--wink-medium-gray)',
+                        borderRadius: '12px',
+                        backgroundColor: 'var(--wink-dark-gray)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                      onClick={() => setSelectedEmployee(emp)}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--wink-orange)'}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--wink-medium-gray)'}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <h3 style={{ marginBottom: '8px', color: 'var(--wink-white)' }}>
+                            {emp.employee_name}
+                          </h3>
+                          <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '4px' }}>
+                            {emp.position}
+                          </p>
+                          <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px' }}>
+                            {emp.cycle_name}
+                          </p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ color: 'var(--wink-green)', fontSize: '14px', marginBottom: '4px' }}>
+                            ✅ Оценка по целям завершена
+                          </div>
+                          <div style={{ color: 'var(--wink-orange)', fontSize: '14px' }}>
+                            ⏳ Ожидает оценки потенциала
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
-
-          <form onSubmit={handleSubmit}>
-            {/* Выбор сотрудника и цикла */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
-              <div className="form-group">
-                <label>Сотрудник *</label>
-                <select
-                  value={selectedEmployee}
-                  onChange={(e) => setSelectedEmployee(e.target.value)}
-                  required
-                >
-                  <option value="">Выберите сотрудника</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.first_name} {emp.last_name} - {emp.position}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Цикл оценки *</label>
-                <select
-                  value={selectedCycle}
-                  onChange={(e) => setSelectedCycle(e.target.value)}
-                  required
-                >
-                  <option value="">Выберите цикл</option>
-                  {cycles.map(cycle => (
-                    <option key={cycle.id} value={cycle.id}>
-                      {cycle.name} ({new Date(cycle.start_date).toLocaleDateString()} - {new Date(cycle.end_date).toLocaleDateString()})
-                    </option>
-                  ))}
-                </select>
-              </div>
+        ) : (
+          <div className="section-card">
+            {/* Преамбула */}
+            <div style={{ 
+              background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(247, 147, 30, 0.1) 100%)',
+              border: '1px solid var(--wink-orange)',
+              borderRadius: '8px',
+              padding: '20px',
+              marginBottom: '24px'
+            }}>
+              <h3 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>📋 Что важно учесть</h3>
+              <p style={{ margin: '12px 0', lineHeight: '1.6' }}>
+                Данный раздел необходим для общей оценки потенциала сотрудника.
+                <br/>Две шкалы: <strong>потенциал-результативность</strong>
+              </p>
+              <p style={{ margin: '12px 0', fontWeight: '600' }}>Он складывается из следующих зон:</p>
+              <ol style={{ margin: '12px 0 0 20px', lineHeight: '1.8' }}>
+                <li><strong>Результативность</strong>
+                  <ul style={{ marginTop: '8px' }}>
+                    <li>Профессиональные качества (5 вопросов)</li>
+                    <li>Личные качества (4 вопроса)</li>
+                  </ul>
+                </li>
+                <li style={{ marginTop: '12px' }}><strong>Потенциал</strong> (6 вопросов + приоритеты ОЛЭ)</li>
+                <li style={{ marginTop: '8px' }}><strong>Стремление развиваться и расти</strong></li>
+              </ol>
             </div>
 
-            {selectedEmployeeData && (
-              <div style={{
-                background: '#2a2a2a',
+            <form onSubmit={handleSubmit}>
+              {/* Информация о выбранном сотруднике */}
+              <div style={{ 
+                background: '#f8f9fa',
                 borderRadius: '8px',
                 padding: '16px',
                 marginBottom: '32px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <h3 style={{ margin: '0 0 8px 0' }}>{selectedEmployee.employee_name}</h3>
+                  <p style={{ margin: '0', color: '#666' }}>{selectedEmployee.position}</p>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#888' }}>
+                    Цикл: {selectedEmployee.cycle_name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmployee(null);
+                    setFormData({
+                      prof_responsibility: false,
+                      prof_result_oriented: false,
+                      prof_proactivity: false,
+                      prof_open_mindset: false,
+                      prof_team_player: false,
+                      professional_comment: '',
+                      pers_took_responsibility: false,
+                      pers_transparent_communication: false,
+                      pers_shared_info: false,
+                      pers_organized_work: false,
+                      personal_comment: '',
+                      had_motivation_one_on_one: false,
+                      knows_miscommunication_cases: false,
+                      development_desire: 'proactive',
+                      is_successor: false,
+                      successor_ready_timing: '1-2_years',
+                      turnover_risk: 5,
+                      ole_priority_1: '',
+                      ole_priority_2: ''
+                    });
+                  }}
+                  className="btn-secondary"
+                >
+                  ← Вернуться к списку
+                </button>
+              </div>
+
+              {/* РАЗДЕЛ 1: РЕЗУЛЬТАТИВНОСТЬ */}
+              <div style={{
+                background: 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
+                borderRadius: '12px',
+                padding: '24px',
+                marginBottom: '24px',
                 border: '1px solid #404040'
               }}>
-                <strong style={{ color: 'var(--wink-orange)' }}>Оценка для:</strong> {selectedEmployeeData.first_name} {selectedEmployeeData.last_name}
-                <br/>
-                <span style={{ color: '#999' }}>{selectedEmployeeData.position} • {selectedEmployeeData.email}</span>
-              </div>
-            )}
-
-            {/* РАЗДЕЛ 1: РЕЗУЛЬТАТИВНОСТЬ */}
-            <div style={{
-              background: 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
-              borderRadius: '12px',
-              padding: '24px',
-              marginBottom: '24px',
-              border: '1px solid #404040'
-            }}>
-              <h2 style={{ color: 'var(--wink-orange)', marginTop: 0, marginBottom: '24px' }}>
-                1. Результативность (максимум 9 баллов)
-              </h2>
+                <h2 style={{ color: 'var(--wink-orange)', marginTop: 0, marginBottom: '24px' }}>
+                  1. Результативность (максимум 8 баллов)
+                </h2>
               
               {/* Профессиональные качества */}
               <div style={{ marginBottom: '32px' }}>
@@ -459,7 +533,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
               border: '1px solid #404040'
             }}>
               <h2 style={{ color: 'var(--wink-orange)', marginTop: 0, marginBottom: '24px' }}>
-                2. Потенциал (максимум 16 баллов)
+                2. Потенциал (максимум 12 баллов)
               </h2>
               
               {/* Вопрос 2: Личные качества - НЕГАТИВНЫЕ (галочка = проблема = 0 баллов) */}
@@ -739,39 +813,6 @@ const PotentialAssessment = ({ user, onLogout }) => {
                 </div>
               </div>
 
-              {/* Вопросы 3.7 и 3.8 - ОЛЭ приоритеты */}
-              <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', display: 'block' }}>
-                  <strong>3.7.</strong> Подтянуть из ОЛЭ - выбрать 1й приоритет
-                </label>
-                <input
-                  type="text"
-                  value={formData.ole_priority_1}
-                  onChange={(e) => setFormData({...formData, ole_priority_1: e.target.value})}
-                  placeholder="Введите первый приоритет из ОЛЭ..."
-                  style={{ width: '100%', padding: '12px' }}
-                />
-                <p style={{ color: '#666', fontSize: '13px', marginTop: '8px' }}>
-                  {formData.ole_priority_1 ? '+1 балл' : 'Не заполнено (0 баллов)'}
-                </p>
-              </div>
-
-              <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', display: 'block' }}>
-                  <strong>3.8.</strong> Подтянуть из ОЛЭ - выбрать 2й приоритет
-                </label>
-                <input
-                  type="text"
-                  value={formData.ole_priority_2}
-                  onChange={(e) => setFormData({...formData, ole_priority_2: e.target.value})}
-                  placeholder="Введите второй приоритет из ОЛЭ..."
-                  style={{ width: '100%', padding: '12px' }}
-                />
-                <p style={{ color: '#666', fontSize: '13px', marginTop: '8px' }}>
-                  {formData.ole_priority_2 ? '+1 балл' : 'Не заполнено (0 баллов)'}
-                </p>
-              </div>
-
               {/* Итого по потенциалу */}
               <div style={{
                 marginTop: '24px',
@@ -783,13 +824,12 @@ const PotentialAssessment = ({ user, onLogout }) => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ color: '#2196f3', fontSize: '20px' }}>
-                      Потенциал: {potRaw} / 16 баллов
+                      Потенциал: {potRaw} / 12 баллов
                     </strong>
                     <p style={{ color: '#999', margin: '8px 0 0 0', fontSize: '14px' }}>
                       Итоговая оценка: {potFinal} {'★'.repeat(potFinal)}{'☆'.repeat(3 - potFinal)}
                       {potFinal === 1 && ' (1-7 баллов)'}
                       {potFinal === 2 && ' (8-12 баллов)'}
-                      {potFinal === 3 && ' (13-16 баллов)'}
                     </p>
                   </div>
                   <div style={{ fontSize: '48px', color: '#2196f3' }}>
@@ -817,7 +857,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                 }}>
                   <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>РЕЗУЛЬТАТИВНОСТЬ</div>
                   <div style={{ fontSize: '64px', fontWeight: 'bold', lineHeight: '1' }}>{perfFinal}★</div>
-                  <div style={{ fontSize: '16px', opacity: 0.9, marginTop: '8px' }}>{perfRaw} / 9 баллов</div>
+                  <div style={{ fontSize: '16px', opacity: 0.9, marginTop: '8px' }}>{perfRaw} / 8 баллов</div>
                 </div>
                 <div style={{ 
                   background: 'rgba(255, 255, 255, 0.2)', 
@@ -827,7 +867,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                 }}>
                   <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>ПОТЕНЦИАЛ</div>
                   <div style={{ fontSize: '64px', fontWeight: 'bold', lineHeight: '1' }}>{potFinal}★</div>
-                  <div style={{ fontSize: '16px', opacity: 0.9, marginTop: '8px' }}>{potRaw} / 16 баллов</div>
+                  <div style={{ fontSize: '16px', opacity: 0.9, marginTop: '8px' }}>{potRaw} / 12 баллов</div>
                 </div>
               </div>
             </div>
@@ -851,7 +891,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
               </button>
               <button
                 type="submit"
-                disabled={loading || !selectedEmployee || !selectedCycle}
+                disabled={loading || !selectedEmployee}
                 style={{
                   padding: '14px 48px',
                   background: loading ? '#666' : 'linear-gradient(135deg, var(--wink-orange) 0%, #f7931e 100%)',
@@ -861,7 +901,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                   fontSize: '16px',
                   fontWeight: 'bold',
                   cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: (loading || !selectedEmployee || !selectedCycle) ? 0.5 : 1
+                  opacity: (loading || !selectedEmployee) ? 0.5 : 1
                 }}
               >
                 {loading ? 'Сохранение...' : 'Сохранить оценку'}
@@ -869,6 +909,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
             </div>
           </form>
         </div>
+        )}
       </div>
     </div>
   );
