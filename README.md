@@ -1,201 +1,221 @@
-# Performance Review System# WINK Performance Review System
+# WINK Performance Review System
 
+Корпоративная система оценки персонала для компании WINK.
 
+## Описание
 
-Enterprise performance evaluation system for WINK company.Система оценки персонала для компании WINK
+Веб-платформа для автоматизации процесса Performance Review, включающая функционал самооценки, оценки 360 градусов, оценки потенциала (9-box), управления целями и формирования индивидуальных планов развития сотрудников.
 
+## Технологический стек
 
+- **Frontend**: React 18.3.1
+- **Backend**: Node.js 20.18.0, Express 4.19.2
+- **База данных**: PostgreSQL 17
+- **Аутентификация**: JWT
+- **UI**: Custom CSS (фирменный стиль WINK)
 
-## Quick Start## Технологии
+## Быстрый старт
 
+### Предварительные требования
 
+- Node.js v20.18.0 или выше
+- PostgreSQL 17
+- Git
 
-1. Install PostgreSQL 17- **Frontend**: React 18
+### Установка
 
-2. Restore database from backup:- **Backend**: Node.js + Express
-
-   ```powershell- **Авторизация**: JWT
-
-   .\RESTORE_DATABASE.ps1- **Стиль**: Фирменный стиль WINK (черный + оранжевый)
-
-   ```
-
-3. Start servers:## Установка
-
-   ```powershell
-
-   .\START_FULL.ps11. Установите зависимости для всего проекта:
-
-   ``````bash
-
-4. Open http://localhost:3000npm run install-all
-
+1. Клонируйте репозиторий:
+```bash
+git clone https://github.com/Helenatroya729/wink-performance-review.git
+cd wink-performance-review
 ```
 
-## Full Documentation
+2. Восстановите базу данных из бэкапа:
+```powershell
+.\RESTORE_DATABASE.ps1
+```
 
-2. Или установите отдельно:
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for complete installation and configuration guide.```bash
-
-# Корневая папка
-
-## Default Usersnpm install
-
-
-
-All users have password: **123456**# Frontend
-
-cd client
-
-- Admin: admin@wink.runpm install
-
-- HR: hr@wink.ru
-
-- Manager: manager@wink.ru# Backend
-
-- Employee: employee@wink.rucd ../server
-
+3. Установите зависимости:
+```powershell
 npm install
-
-## Tech Stack```
-
-
-
-- Frontend: React## Запуск проекта
-
-- Backend: Node.js + Express
-
-- Database: PostgreSQL 17### Запуск всего проекта (Frontend + Backend):
-
-- Auth: JWT```bash
-
-npm run dev
-
-## Features```
-
-
-
-- Employee self-assessment### Или запускайте отдельно:
-
-- Peer feedback
-
-- Manager evaluations**Frontend** (порт 3000):
-
-- Potential assessment```bash
-
-- HR analytics dashboardcd client
-
-- 9-box matrix visualizationnpm start
-
+cd client && npm install
+cd ../server && npm install
 ```
 
-## License
-
-**Backend** (порт 5000):
-
-MIT```bash
-
-cd server
-npm run dev
+4. Запустите приложение:
+```powershell
+.\START_FULL.ps1
 ```
 
-## Тестовые пользователи
+Приложение будет доступно по адресу: http://localhost:3000
 
-| Роль | Логин | Пароль |
-|------|-------|--------|
-| Сотрудник | `employee` | `employee123` |
-| Руководитель | `manager` | `manager123` |
-| HR | `hr` | `hr123` |
-| Администратор | `admin` | `admin123` |
+## Тестовые учетные данные
 
-## Функционал по ролям
+Все пользователи имеют пароль: `123456`
 
-### Сотрудник
-- Создание и управление целями (1-5 целей)
-- Самооценка
-- Запрос оценок от коллег (до 5 респондентов)
-- Просмотр результатов и рекомендаций
-- Работа с планом развития (ИПР)
+| Роль | Email | Описание |
+|------|-------|----------|
+| Администратор | admin@wink.ru | Полный доступ к системе |
+| HR | hr@wink.ru | Управление процессом оценки |
+| Руководитель | manager1@wink.ru | Оценка подчиненных |
+| Сотрудник | emp1@wink.ru | Базовый функционал |
 
-### Руководитель
-- Утверждение целей подчиненных
-- Проведение оценки 360°
-- Оценка потенциала (9-box)
-- Написание обратной связи
-- Участие в калибровочных сессиях
-- Проставление финального рейтинга
+## Основной функционал
 
-### HR
-- Анализ матрицы 9-box по компании
-- Составление отчетов
-- Управление процессом Performance Review
-- Рекомендации по Salary Increase
-- Экспорт данных
-- Управление калибровками
+### Для сотрудников
+- Управление целями (создание, редактирование, отслеживание прогресса)
+- Заполнение самооценки
+- Запрос оценок от коллег (peer review)
+- Просмотр результатов оценки
+- Работа с индивидуальным планом развития (ИПР)
 
-### Администратор
+### Для руководителей
+- Управление командой и целями подчиненных
+- Проведение оценки сотрудников
+- Оценка потенциала (9-box matrix)
+- Формирование обратной связи
+- Просмотр аналитики по команде
+
+### Для HR
+- Управление циклами оценки
+- Аналитика по всей компании
+- Матрица 9-box на уровне организации
+- Формирование рекомендаций по развитию
+- Генерация отчетов и экспорт данных
+- Интеграция с AI-ассистентом для составления рекомендаций
+
+### Для администраторов
 - Управление пользователями и ролями
-- Настройка интеграций (API)
-- Аудит действий пользователей
-- Системные настройки
-- Экспорт данных в различных форматах
+- Настройка системы
+- Просмотр логов и аудит действий
 
-## Фирменный стиль
-
-- **Основной цвет**: #000000 (черный)
-- **Акцентный цвет**: #FF6B00 (оранжевый WINK)
-- **Дополнительный**: #FF8533 (светло-оранжевый)
-
-## Структура проекта
+## Архитектура проекта
 
 ```
-Расти в IT/
-├── client/                 # Frontend React приложение
+wink-performance-review/
+├── client/                      # Frontend (React)
 │   ├── public/
 │   └── src/
-│       ├── components/    # Переиспользуемые компоненты
-│       ├── pages/        # Страницы по ролям
+│       ├── components/         # Переиспользуемые компоненты
+│       ├── pages/             # Страницы приложения
+│       │   ├── EmployeeDashboard.js
+│       │   ├── ManagerDashboard.js
+│       │   ├── HRDashboard.js
+│       │   └── ...
 │       ├── App.js
 │       └── index.js
-├── server/               # Backend Node.js API
-│   ├── server.js
-│   └── .env
-└── package.json         # Корневой package.json
+│
+├── server/                     # Backend (Node.js + Express)
+│   ├── server-new.js          # Основной сервер
+│   ├── database.js            # Подключение к БД
+│   └── ...
+│
+├── aiassistant/               # AI-интеграция (Python)
+│   └── app/
+│
+├── database_backups/          # Резервные копии БД
+│
+├── START_FULL.ps1            # Скрипт запуска
+├── RESTORE_DATABASE.ps1      # Скрипт восстановления БД
+└── package.json              # Зависимости проекта
 ```
 
 ## API Endpoints
 
-- `POST /api/auth/login` - Авторизация
-- `GET /api/auth/me` - Получение текущего пользователя
-- `GET /api/users` - Список пользователей (admin)
-- `GET /api/audit` - Аудит действий (admin)
-- `GET /api/health` - Проверка работы API
+### Аутентификация
+- `POST /api/auth/login` - Вход в систему
+- `GET /api/auth/me` - Получение данных текущего пользователя
 
-## MVP Функционал
+### Пользователи
+- `GET /api/users` - Список пользователей
+- `GET /api/users/:id` - Данные конкретного пользователя
+- `PUT /api/users/:id` - Обновление данных пользователя
 
-### Этап 1: Постановка целей
-- ✅ Страница входа с разграничением по ролям
-- ✅ Dashboard для каждой роли
-- ⏳ Форма создания целей/задач
-- ⏳ Самооценка и выбор респондентов
+### Цели
+- `GET /api/employee-goals` - Получение целей сотрудника
+- `POST /api/employee-goals` - Создание новой цели
+- `PUT /api/employee-goals/:id` - Обновление цели
+- `DELETE /api/employee-goals/:id` - Удаление цели
 
-### Этап 2: Оценка и аналитика
-- ⏳ Модуль оценки 360°
-- ⏳ Оценка потенциала (9-box)
-- ⏳ Подсчет рейтинга по формулам
-- ⏳ Рекомендации по развитию
+### Оценки
+- `GET /api/self-assessments` - Самооценки сотрудника
+- `POST /api/self-assessments` - Сохранение самооценки
+- `GET /api/manager/team-assessment` - Оценки команды
+- `POST /api/manager-evaluations` - Сохранение оценки руководителя
+- `GET /api/peer-feedbacks/:employeeId` - Оценки коллег
 
-## TODO
+### Аналитика
+- `GET /api/hr/dashboard` - Данные для HR дашборда
+- `GET /api/hr/nine-box` - Матрица 9-box
+- `GET /api/manager/team-stats` - Статистика по команде
 
-- [ ] Добавить формы создания целей
-- [ ] Реализовать модуль оценки 360°
-- [ ] Интеграция с Excel для импорта вопросов
-- [ ] Система подсчета рейтингов
-- [ ] Генерация рекомендаций на основе триггерных слов
-- [ ] Экспорт данных в различных форматах
-- [ ] Интеграция с корпоративным порталом через API
+## Дизайн-система
 
-## Хакатон "Расти в IT"
+### Цветовая палитра
+- **Основной (черный)**: #000000
+- **Акцент (оранжевый WINK)**: #FF6B00
+- **Светлый оранжевый**: #FF8533
+- **Серый текст**: #666666
+- **Фон**: #F5F5F5
 
-Проект разработан для хакатона компании WINK
+### Компоненты
+- Кнопки с градиентами
+- Карточки с тенями
+- Статус-индикаторы
+- Модальные окна
+- Интерактивные формы
+
+## Разработка
+
+### Структура базы данных
+
+Основные таблицы:
+- `users` - Пользователи
+- `review_cycles` - Циклы оценки
+- `employee_review_periods` - Периоды оценки сотрудников
+- `employee_goals` - Цели сотрудников
+- `self_assessments` - Самооценки
+- `manager_evaluations` - Оценки руководителей
+- `peer_reviews` - Оценки коллег
+- `potential_assessments` - Оценка потенциала (9-box)
+- `employee_recommendations` - Рекомендации для сотрудников
+
+### Запуск в режиме разработки
+
+Frontend:
+```bash
+cd client
+npm start
+```
+
+Backend:
+```bash
+cd server
+npm run dev
+```
+
+## Деплой
+
+Подробная инструкция по развертыванию в продакшене находится в файле [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Интеграции
+
+### AI-ассистент
+Система интегрирована с AI-модулем на Python для автоматической генерации рекомендаций по развитию сотрудников на основе анализа оценок и триггерных слов.
+
+Подробнее: [AI_INTEGRATION.md](AI_INTEGRATION.md)
+
+## Документация
+
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Инструкция по развертыванию
+- [AI_INTEGRATION.md](AI_INTEGRATION.md) - Интеграция с AI
+- [TESTING_GUIDE.md](TESTING_GUIDE.md) - Руководство по тестированию
+- [CALCULATION_FUNCTIONALITY.md](CALCULATION_FUNCTIONALITY.md) - Алгоритмы расчета оценок
+
+## Лицензия
+
+MIT License
+
+## Авторы
+
+Проект разработан для хакатона "Расти в IT" компании WINK.
