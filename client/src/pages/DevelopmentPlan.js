@@ -14,6 +14,12 @@ const DevelopmentPlan = ({ user, onLogout }) => {
   const [newTask, setNewTask] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
 
+  // Загружаем рекомендации при монтировании
+  useEffect(() => {
+    loadRecommendations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Запускаем только один раз
+
   const loadRecommendations = async () => {
     try {
       setLoading(true);
@@ -131,12 +137,6 @@ const DevelopmentPlan = ({ user, onLogout }) => {
   const rec = selectedRecommendation;
   const completedTasks = tasks.filter(t => t.completed).length;
   const progress = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
-
-  // Загружаем рекомендации при монтировании
-  useEffect(() => {
-    loadRecommendations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Запускаем только один раз
 
   return (
     <div className="dashboard">

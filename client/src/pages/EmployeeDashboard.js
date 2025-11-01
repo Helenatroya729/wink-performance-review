@@ -48,11 +48,10 @@ const EmployeeDashboard = ({ user, onLogout }) => {
         console.log('   - Все поля:', periodsData[0]);
       }
       
-      // Загружаем рекомендации
+      // Загружаем рекомендации (просто логируем, не сохраняем)
       try {
         const recommendationsData = await api.get('/employee/my-recommendations');
-        setRecommendations(recommendationsData);
-        console.log(' Загружены рекомендации:', recommendationsData);
+        console.log('✅ Загружены рекомендации:', recommendationsData);
       } catch (error) {
         console.log('ℹ Рекомендации пока не получены');
       }
