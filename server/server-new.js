@@ -1,3 +1,6 @@
+// ВАЖНО: dotenv должен загружаться ПЕРВЫМ!
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -8,7 +11,6 @@ const {
   generateDepartmentReport, 
   generateCompanyReport 
 } = require('./pdf-report-generator');
-require('dotenv').config();
 
 const { query, getClient, testConnection } = require('./database');
 
