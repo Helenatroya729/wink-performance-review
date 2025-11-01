@@ -11,12 +11,13 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [pendingReviews, setPendingReviews] = useState([]);
   const [rating, setRating] = useState(null);
-  const [employeePeriods, setEmployeePeriods] = useState([]);
-  const [prStatuses, setPrStatuses] = useState([]);
+  const [myPeriods, setMyPeriods] = useState([]);
   const [showEarlyRequestModal, setShowEarlyRequestModal] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState(null);
-  const [earlyRequestComment, setEarlyRequestComment] = useState('');
   const [recommendations, setRecommendations] = useState([]);
+  const [goalsTab, setGoalsTab] = useState('current'); // 'current' или 'completed'
+  const [showGoalDetailsModal, setShowGoalDetailsModal] = useState(false);
+  const [selectedGoalDetails, setSelectedGoalDetails] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -25,33 +26,37 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [goalsData, /* statsData, */ cyclesData, reviewsData, ratingData, periodsData, prStatusData] = await Promise.all([
+      const [goalsData, /* statsData, */ cyclesData, reviewsData, ratingData, periodsData] = await Promise.all([
         api.goals.getAll(),
         // api.dashboard.getStats(), // Временно отключено
         api.cycles.getAll(),
         api.peerFeedback.getPendingReviews(),
         api.employee.getMyRating(),
-        api.employeeReviewPeriods.get(),
-        api.performanceReview.getStatus()
+        api.reviewPeriods.getMy()
       ]);
       setGoals(goalsData);
       // setStats(statsData); // Временно отключено
       setCycles(cyclesData);
       setPendingReviews(reviewsData);
       setRating(ratingData);
-      setEmployeePeriods(periodsData);
-      setPrStatuses(prStatusData);
+      setMyPeriods(periodsData);
       console.log('📊 Загружен рейтинг:', ratingData);
-      console.log('📅 Индивидуальные периоды:', periodsData);
-      console.log('🔄 Статусы PR:', prStatusData);
+      console.log('📅 Мои периоды (всего ' + periodsData.length + '):', periodsData);
+      if (periodsData && periodsData.length > 0) {
+        console.log('✅ Первый период - ID:', periodsData[0].id);
+        console.log('   - self_assessment_count:', periodsData[0].self_assessment_count);
+        console.log('   - peer_reviews_count:', periodsData[0].peer_reviews_count);
+        console.log('   - manager_evaluation_completed:', periodsData[0].manager_evaluation_completed);
+        console.log('   - Все поля:', periodsData[0]);
+      }
       
       // Загружаем рекомендации
       try {
         const recommendationsData = await api.get('/employee/my-recommendations');
         setRecommendations(recommendationsData);
-        console.log('📝 Загружены рекомендации:', recommendationsData);
+        console.log(' Загружены рекомендации:', recommendationsData);
       } catch (error) {
-        console.log('ℹ️ Рекомендации пока не получены');
+        console.log('ℹ Рекомендации пока не получены');
       }
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
@@ -64,7 +69,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const [editingGoal, setEditingGoal] = useState(null);
   const [cycles, setCycles] = useState([]);
   const [newGoal, setNewGoal] = useState({
-    cycle_id: 2, // По умолчанию Годовая оценка 2025
+    cycle_id: 1, // По умолчанию Годовая оценка 2025
     title: '',
     description: '',
     expected_deadline: '',
@@ -77,6 +82,13 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const handleCreateGoal = async (e, resubmit = false) => {
     e.preventDefault();
     try {
+      // Проверка лимита целей (не более 5 на текущий период)
+      const currentGoals = goals.filter(g => g.status !== 'completed');
+      if (!editingGoal && currentGoals.length >= 5) {
+        alert('Нельзя создать более 5 целей на текущий период. Удалите или завершите существующую цель.');
+        return;
+      }
+
       if (editingGoal) {
         // Обновление существующей цели
         const updateData = { ...newGoal };
@@ -103,7 +115,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
       setShowGoalForm(false);
       setEditingGoal(null);
       setNewGoal({
-        cycle_id: 2,
+        cycle_id: 1,
         title: '',
         description: '',
         expected_deadline: '',
@@ -172,41 +184,39 @@ const EmployeeDashboard = ({ user, onLogout }) => {
     }
   };
 
-  // Запрос досрочного начала Performance Review
-  const handleRequestEarlyPR = (period) => {
-    setSelectedPeriod(period);
-    setShowEarlyRequestModal(true);
-  };
-
-  const handleSubmitEarlyRequest = async () => {
-    if (!earlyRequestComment.trim()) {
-      alert('Пожалуйста, укажите причину досрочного запроса');
+  // Запрос раннего начала Performance Review
+  const handleRequestEarlyPR = async (period) => {
+    if (!window.confirm(`Запросить ранний Performance Review для периода "${period.name}"?\n\nЗапрос будет отправлен вашему руководителю на утверждение.`)) {
       return;
     }
 
     try {
-      await api.performanceReview.requestEarly(selectedPeriod.id, earlyRequestComment);
+      await api.reviewPeriods.requestEarly(period.id);
       alert('Запрос отправлен! Ожидайте одобрения от руководителя и HR.');
-      setShowEarlyRequestModal(false);
-      setEarlyRequestComment('');
-      setSelectedPeriod(null);
       loadData();
     } catch (error) {
       alert('Ошибка: ' + error.message);
     }
   };
 
+  // Открыть модальное окно с деталями цели
+  const handleShowGoalDetails = (goal) => {
+    setSelectedGoalDetails(goal);
+    setShowGoalDetailsModal(true);
+  };
+
   const getStatusBadge = (status) => {
     const statusMap = {
-      not_started: { text: 'Не начат', color: '#9CA3AF', bg: '#F3F4F6' },
-      pending_approval: { text: 'Ожидает одобрения', color: '#FF6B00', bg: '#FFE5D9' },
-      manager_approved: { text: 'Одобрено руководителем', color: '#FF8533', bg: '#FFF0E6' },
-      available: { text: 'Доступен', color: '#16A34A', bg: '#DCFCE7' },
+      not_started: { text: 'Не начат', color: '#9CAAF', bg: '#FF4F6' },
+      pending_manager_approval: { text: 'Ожидает руководителя', color: '#F59E0B', bg: '#FEFC7' },
+      pending_hr_approval: { text: 'Ожидает HR', color: '#B8F6', bg: '#DBEAFE' },
+      rejected_by_manager: { text: 'Отклонен руководителем', color: '#EF4444', bg: '#FEEE' },
       in_progress: { text: 'В процессе', color: '#FF6B00', bg: '#FFF4ED' },
-      submitted: { text: 'Отправлен', color: '#FFA366', bg: '#FFF7F0' },
-      completed: { text: 'Завершен', color: '#059669', bg: '#D1FAE5' }
+      awaiting_calculation: { text: 'Ожидает калькуляции', color: '#8B5CF6', bg: '#EDE9FE' },
+      calculated: { text: 'Рассчитан', color: '#0B98', bg: '#DFAE5' },
+      completed: { text: 'Завершен', color: '#059669', bg: '#DFAE5' }
     };
-    const badge = statusMap[status] || { text: status, color: '#9CA3AF', bg: '#F3F4F6' };
+    const badge = statusMap[status] || { text: status, color: '#9CAAF', bg: '#FF4F6' };
     return (
       <span style={{ 
         padding: '4px 12px', 
@@ -223,8 +233,8 @@ const EmployeeDashboard = ({ user, onLogout }) => {
 
   const quickActions = [
     { id: 1, title: 'Создать цели', icon: '', color: '#FF6B00', action: () => setShowGoalForm(true) },
-    { id: 2, title: 'Самооценка', icon: '', color: '#FF8533', action: () => navigate('/self-assessment') },
-    { id: 3, title: 'Запросить оценку', icon: '', color: '#FFA366', action: () => navigate('/peer-feedback') },
+    { id: 2, title: 'Самооценка', icon: '', color: '#FF8500', action: () => navigate('/self-assessment') },
+    { id: 3, title: 'Запросить оценку', icon: '', color: '#FFA600', action: () => navigate('/peer-feedback') },
     { id: 4, title: 'План развития', icon: '', color: '#FFB580', action: () => navigate('/development-plan') }
   ];
 
@@ -254,29 +264,29 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   }
   
   // Добавляем уведомление о доступности Performance Review
-  const availablePeriod = employeePeriods.find((period, index) => {
-    const prStatus = prStatuses[index];
-    return prStatus?.status === 'available' && prStatus?.is_in_last_month;
-  });
-  
-  if (availablePeriod) {
+  const inProgressPeriod = myPeriods.find(p => p.status === 'in_progress');
+  if (inProgressPeriod) {
     notifications.push({
       id: 3,
-      text: `Начался период Performance Review: ${availablePeriod.name}`,
+      text: `Performance Review активен: ${inProgressPeriod.name}`,
       time: 'Сегодня',
       action: () => navigate('/self-assessment')
     });
   }
   
-  // Добавляем уведомление об одобрении досрочного запроса
-  const approvedRequest = prStatuses.find(s => s.status === 'available' && s.manager_approved_date);
-  if (approvedRequest) {
-    notifications.push({
-      id: 4,
-      text: 'Ваш запрос на досрочное начало Performance Review одобрен',
-      time: new Date(approvedRequest.hr_approved_date || approvedRequest.manager_approved_date).toLocaleDateString(),
-      action: () => navigate('/self-assessment')
-    });
+  // Добавляем уведомление об одобрении запроса
+  const approvedPeriod = myPeriods.find(p => p.status === 'in_progress' && p.hr_approved_at);
+  if (approvedPeriod && approvedPeriod.hr_approved_at) {
+    const approvalDate = new Date(approvedPeriod.hr_approved_at);
+    const daysSinceApproval = Math.floor((Date.now() - approvalDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSinceApproval < 7) { // Показываем только если утверждено менее 7 дней назад
+      notifications.push({
+        id: 4,
+        text: 'Ваш запрос на ранний Performance Review одобрен',
+        time: approvalDate.toLocaleDateString('ru-RU'),
+        action: () => navigate('/self-assessment')
+      });
+    }
   }
 
   const getStatusLabel = (status) => {
@@ -324,14 +334,14 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                 <div style={{
                   marginBottom: '20px',
                   padding: '16px',
-                  backgroundColor: editingGoal.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(59, 130, 246, 0.1)',
-                  borderLeft: `4px solid ${editingGoal.status === 'rejected' ? '#dc2626' : '#3b82f6'}`,
+                  backgroundColor: editingGoal.status === 'rejected' ? 'rgba(220, 38, 38, 0.1)' : 'rgba(139, 92, 246, 0.1)',
+                  borderLeft: `4px solid ${editingGoal.status === 'rejected' ? '#dc2626' : '#8b5cf6'}`,
                   borderRadius: '8px'
                 }}>
                   <div style={{ 
                     fontSize: '14px', 
                     fontWeight: '600', 
-                    color: editingGoal.status === 'rejected' ? '#dc2626' : '#3b82f6',
+                    color: editingGoal.status === 'rejected' ? '#dc2626' : '#8b5cf6',
                     marginBottom: '8px',
                     display: 'flex',
                     alignItems: 'center',
@@ -391,7 +401,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     required
                     value={newGoal.title}
                     onChange={(e) => setNewGoal({...newGoal, title: e.target.value})}
-                    placeholder="Например: Повысить конверсию на 15%"
+                    placeholder="Например: Повысить конверсию на 5%"
                   />
                 </div>
 
@@ -401,7 +411,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     value={newGoal.description}
                     onChange={(e) => setNewGoal({...newGoal, description: e.target.value})}
                     placeholder="Подробное описание цели..."
-                    rows="3"
+                    rows=""
                   />
                 </div>
 
@@ -411,7 +421,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     value={newGoal.expected_results}
                     onChange={(e) => setNewGoal({...newGoal, expected_results: e.target.value})}
                     placeholder="Что должно быть достигнуто..."
-                    rows="2"
+                    rows=""
                   />
                 </div>
 
@@ -421,7 +431,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     value={newGoal.key_tasks}
                     onChange={(e) => setNewGoal({...newGoal, key_tasks: e.target.value})}
                     placeholder="Основные шаги для достижения цели..."
-                    rows="2"
+                    rows=""
                   />
                 </div>
 
@@ -447,7 +457,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                       <button 
                         type="submit" 
                         className="btn-secondary"
-                        style={{ backgroundColor: '#6b7280' }}
+                        style={{ backgroundColor: '#6b780' }}
                       >
                         Только сохранить изменения
                       </button>
@@ -496,7 +506,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                 borderRadius: '8px',
                 borderLeft: `4px solid ${feedbackGoal.status === 'rejected' ? '#dc2626' : 'var(--wink-orange)'}`
               }}>
-                <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)' }}>Цель</div>
+                <div style={{ fontSize: '12px', color: 'var(--wink-light-gray)' }}>Цель</div>
                 <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--wink-white)', marginBottom: '12px' }}>
                   {feedbackGoal.title}
                 </div>
@@ -508,7 +518,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     Статус: {getStatusLabel(feedbackGoal.status)}
                   </div>
                 </div>
-                <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)' }}>Комментарий</div>
+                <div style={{ fontSize: '12px', color: 'var(--wink-light-gray)' }}>Комментарий</div>
                 <div style={{
                   fontSize: '15px',
                   color: 'var(--wink-white)',
@@ -546,32 +556,53 @@ const EmployeeDashboard = ({ user, onLogout }) => {
               <h2 className="section-title">Мои периоды Performance Review</h2>
               {loading ? (
                 <div style={{ padding: '20px', textAlign: 'center' }}>Загрузка...</div>
-              ) : employeePeriods.length > 0 ? (
+              ) : myPeriods.length > 0 ? (
                 <div style={{ display: 'grid', gap: '16px' }}>
-                  {employeePeriods
-                    .filter(period => {
-                      // Показываем только текущий период (где текущая дата находится между start и end)
-                      const now = new Date();
-                      const start = new Date(period.start_date);
-                      const end = new Date(period.end_date);
-                      return now >= start && now <= end;
-                    })
-                    .map((period, index) => {
-                    const prStatus = prStatuses.find(s => s.period_id === period.id);
-                    const statusText = prStatus?.status || 'not_started';
-                    const isAvailable = statusText === 'available' || prStatus?.is_in_last_month;
-                    const canRequest = prStatus?.can_request_early;
+                  {(() => {
+                    // Логика выбора одного периода для отображения:
+                    // . Если есть период in_progress, awaiting_calculation, calculated или pending - показываем его
+                    // . Если есть период not_started - показываем первый (ближайший)
+                    // . Если все completed - показываем последний
+                    
+                    const activePeriod = myPeriods.find(p => 
+                      p.status === 'in_progress' || 
+                      p.status === 'pending_manager_approval' || 
+                      p.status === 'pending_hr_approval' ||
+                      p.status === 'rejected_by_manager' ||
+                      p.status === 'awaiting_calculation' ||
+                      p.status === 'calculated'
+                    );
+                    
+                    const notStartedPeriod = myPeriods.find(p => p.status === 'not_started');
+                    
+                    // Выбираем период для отображения
+                    const periodToShow = activePeriod || notStartedPeriod || myPeriods[myPeriods.length - 1];
+                    
+                    if (!periodToShow) return null;
+                    
+                    const period = periodToShow;
+                    const isInProgress = period.status === 'in_progress';
+                    const canRequestEarly = period.status === 'not_started';
+                    const isPending = period.status === 'pending_manager_approval' || period.status === 'pending_hr_approval';
+                    const isAwaitingCalc = period.status === 'awaiting_calculation';
+                    const isCalculated = period.status === 'calculated';
                     
                     return (
                       <div 
                         key={period.id} 
                         style={{
                           padding: '24px',
-                          border: '2px solid #FF6B00',
+                          border: '1px solid #FF6B00',
                           borderRadius: '12px',
-                          backgroundColor: '#2D2D2D',
-                          borderLeft: `6px solid ${isAvailable ? '#FF6B00' : '#FFA366'}`,
-                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                          backgroundColor: '#1E1E1E',
+                          borderLeft: `6px solid ${
+                            isInProgress ? '#FF6B00' : 
+                            isPending ? '#F59E0B' : 
+                            isAwaitingCalc ? '#FF6B00' :
+                            isCalculated ? '#10B981' :
+                            '#FFA500'
+                          }`,
+                          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                           transition: 'all 0.3s ease',
                           color: '#FFFFFF'
                         }}
@@ -580,91 +611,135 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                           <h3 style={{ margin: 0, fontSize: '18px', color: '#FFFFFF' }}>
                             {period.name}
                           </h3>
-                          {getStatusBadge(statusText)}
+                          {getStatusBadge(period.status)}
                         </div>
                         
-                        <div style={{ color: '#B0B0B0', fontSize: '14px', marginBottom: '8px' }}>
+                        <div style={{ color: '#B0B0B0', fontSize: '14px', marginBottom: '16px' }}>
                           Период: {new Date(period.start_date).toLocaleDateString('ru-RU')} - {new Date(period.end_date).toLocaleDateString('ru-RU')}
                         </div>
                         
-                        {prStatus?.is_in_last_month && (
-                          <div style={{ color: '#4ADE80', fontSize: '14px', fontWeight: '600', marginBottom: '12px' }}>
-                            Последний месяц периода - можно начать Performance Review!
+                        {/* Статус-специфичные сообщения */}
+                        {period.status === 'pending_manager_approval' && period.requested_early_at && (
+                          <div style={{ 
+                            padding: '16px', 
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)', 
+                            borderRadius: '8px',
+                            marginBottom: '16px'
+                          }}>
+                            <div style={{ color: '#F59E0B', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                              ⏳ Ожидает утверждения руководителя
+                            </div>
+                            <div style={{ color: '#B0B0B0', fontSize: '12px' }}>
+                              Запрос отправлен: {new Date(period.requested_early_at).toLocaleDateString('ru-RU')}
+                            </div>
                           </div>
                         )}
                         
-                        {statusText === 'pending_approval' && (
-                          <div style={{ color: '#FFA366', fontSize: '14px', marginTop: '8px' }}>
-                            Запрос отправлен {new Date(prStatus.early_request_date).toLocaleDateString('ru-RU')}
-                            <br />
-                            Комментарий: {prStatus.early_request_comment}
+                        {period.status === 'pending_hr_approval' && (
+                          <div style={{ 
+                            padding: '16px', 
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)', 
+                            borderRadius: '8px',
+                            marginBottom: '16px'
+                          }}>
+                            <div style={{ color: '#8B5CF6', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
+                              ✓ Руководитель одобрил
+                            </div>
+                            <div style={{ color: '#B0B0B0', fontSize: '12px' }}>
+                              Ожидает утверждения HR
+                            </div>
                           </div>
                         )}
                         
-                        {statusText === 'manager_approved' && (
-                          <div style={{ color: '#60A5FA', fontSize: '14px', marginTop: '8px' }}>
-                            Руководитель одобрил - ожидается одобрение HR
+                        {isInProgress && (
+                          <div style={{ 
+                            padding: '16px', 
+                            backgroundColor: 'rgba(74, 222, 128, 0.1)', 
+                            borderRadius: '8px',
+                            marginBottom: '16px'
+                          }}>
+                            <div style={{ color: '#4ADE80', fontSize: '14px', fontWeight: '600', marginBottom: '8px' }}>
+                              ✓ Performance Review активен!
+                            </div>
+                            <div style={{ color: '#B0B0B0', fontSize: '12px', marginBottom: '8px' }}>
+                              Прогресс:
+                            </div>
+                            <div style={{ fontSize: '14px', color: '#E0E0E0', display: 'grid', gap: '4px' }}>
+                              <div>
+                                {period.self_assessment_completed ? '✓' : '○'} Самооценка 
+                                {period.self_assessment_completed && period.self_assessment_completed_at && 
+                                  <span style={{ color: '#4ADE80', marginLeft: '8px' }}>
+                                    (завершена {new Date(period.self_assessment_completed_at).toLocaleDateString('ru-RU')})
+                                  </span>
+                                }
+                              </div>
+                              <div>
+                                {period.peer_reviews_count >= 3 ? '✓' : '○'} Peer Review: {period.peer_reviews_count || 0}/3
+                                {period.peer_reviews_count >= 3 && 
+                                  <span style={{ color: '#4ADE80', marginLeft: '8px' }}>готово</span>
+                                }
+                              </div>
+                              <div>
+                                {period.manager_evaluation_completed ? '✓' : '○'} Оценка руководителя
+                                {period.manager_evaluation_completed && period.manager_evaluation_completed_at && 
+                                  <span style={{ color: '#4ADE80', marginLeft: '8px' }}>
+                                    (завершена {new Date(period.manager_evaluation_completed_at).toLocaleDateString('ru-RU')})
+                                  </span>
+                                }
+                              </div>
+                            </div>
                           </div>
                         )}
                         
-                        {isAvailable && (
-                          <div style={{ marginTop: '12px' }}>
+                        {/* Кнопки действий */}
+                        <div style={{ marginTop: '16px', display: 'flex', gap: '12px' }}>
+                          {isInProgress && (
                             <button
                               style={{ 
+                                flex: 1,
                                 fontSize: '14px', 
-                                padding: '10px 20px',
+                                padding: '12px 20px',
                                 backgroundColor: '#FF6B00',
                                 color: '#FFFFFF',
                                 border: 'none',
                                 borderRadius: '8px',
                                 cursor: 'pointer',
                                 fontWeight: '600',
-                                transition: 'all 0.2s',
-                                width: '100%'
+                                transition: 'all 0.2s'
                               }}
-                              onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = '#FF8533';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = '#FF6B00';
-                              }}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = '#FF8500'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = '#FF6B00'}
                               onClick={() => navigate('/self-assessment')}
                             >
-                              Начать Performance Review
+                              Продолжить Performance Review
                             </button>
-                          </div>
-                        )}
-                        
-                        {canRequest && (
-                          <div style={{ marginTop: '12px' }}>
+                          )}
+                          
+                          {canRequestEarly && (
                             <button
                               style={{ 
+                                flex: 1,
                                 fontSize: '14px', 
-                                padding: '10px 20px',
+                                padding: '12px 20px',
                                 backgroundColor: '#FF6B00',
                                 color: '#FFFFFF',
                                 border: 'none',
                                 borderRadius: '8px',
                                 cursor: 'pointer',
                                 fontWeight: '600',
-                                transition: 'all 0.2s',
-                                width: '100%'
+                                transition: 'all 0.s'
                               }}
-                              onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = '#FF8533';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = '#FF6B00';
-                              }}
+                              onMouseEnter={(e) => e.target.style.backgroundColor = '#FF85'}
+                              onMouseLeave={(e) => e.target.style.backgroundColor = '#FF6B00'}
                               onClick={() => handleRequestEarlyPR(period)}
                             >
-                              Запросить досрочное начало Performance Review
+                              Запросить ранний PR
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     );
-                  })}
+                  })()}
                 </div>
               ) : (
                 <div style={{ color: '#999', padding: '20px' }}>
@@ -673,174 +748,146 @@ const EmployeeDashboard = ({ user, onLogout }) => {
               )}
             </div>
 
-            {/* Модальное окно запроса досрочного начала */}
-            {showEarlyRequestModal && selectedPeriod && (
-              <div className="modal-overlay" onClick={() => setShowEarlyRequestModal(false)}>
-                <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                  <h2>Запросить досрочное начало Performance Review</h2>
-                  <p style={{ color: '#666', marginBottom: '20px' }}>
-                    Период: <strong>{selectedPeriod.name}</strong><br />
-                    {new Date(selectedPeriod.start_date).toLocaleDateString('ru-RU')} - {new Date(selectedPeriod.end_date).toLocaleDateString('ru-RU')}
-                  </p>
-                  
-                  <div className="form-group">
-                    <label>Причина досрочного запроса *</label>
-                    <textarea
-                      value={earlyRequestComment}
-                      onChange={(e) => setEarlyRequestComment(e.target.value)}
-                      placeholder="Например: Все цели полугодия выполнены досрочно, готов к оценке..."
-                      rows="4"
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  
-                  <div className="modal-buttons">
-                    <button
-                      className="btn-primary"
-                      onClick={handleSubmitEarlyRequest}
-                    >
-                      Отправить запрос
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => {
-                        setShowEarlyRequestModal(false);
-                        setEarlyRequestComment('');
-                        setSelectedPeriod(null);
-                      }}
-                    >
-                      Отмена
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div className="section-card">
               <h2 className="section-title">Мои цели на период</h2>
+              
+              {/* Вкладки */}
+              <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', borderBottom: '2px solid #333' }}>
+                <button
+                  onClick={() => setGoalsTab('current')}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: 'transparent',
+                    color: goalsTab === 'current' ? '#FF6B00' : '#999',
+                    border: 'none',
+                    borderBottom: goalsTab === 'current' ? '3px solid #FF6B00' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: goalsTab === 'current' ? '600' : '400',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  Текущие ({goals.filter(g => g.status !== 'completed').length}/5)
+                </button>
+                <button
+                  onClick={() => setGoalsTab('completed')}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: 'transparent',
+                    color: goalsTab === 'completed' ? '#FF6B00' : '#999',
+                    border: 'none',
+                    borderBottom: goalsTab === 'completed' ? '3px solid #FF6B00' : '3px solid transparent',
+                    cursor: 'pointer',
+                    fontWeight: goalsTab === 'completed' ? '600' : '400',
+                    transition: 'all 0.3s'
+                  }}
+                >
+                  Завершенные ({goals.filter(g => g.status === 'completed').length})
+                </button>
+              </div>
+
               {loading ? (
                 <div style={{ padding: '20px', textAlign: 'center' }}>Загрузка...</div>
               ) : (
                 <>
                   <div className="goals-list">
-                    {goals.length > 0 ? (
-                      goals.map(goal => (
-                        <div key={goal.id} className="goal-item">
-                          <div className="goal-header">
-                            <h3>{goal.title}</h3>
-                            <span className={`goal-status ${goal.status === 'submitted' ? 'in-progress' : goal.status === 'approved' ? 'approved' : 'planned'}`}>
-                              {getStatusLabel(goal.status)}
-                            </span>
-                          </div>
-                          {goal.description && (
-                            <p style={{ color: '#666', fontSize: '14px', margin: '8px 0' }}>
-                              {goal.description}
-                            </p>
-                          )}
-                          {goal.expected_results && (
-                            <p style={{ color: '#888', fontSize: '13px', margin: '4px 0' }}>
-                              <strong>Ожидаемый результат:</strong> {goal.expected_results}
-                            </p>
-                          )}
-                          {goal.expected_deadline && (
-                            <p style={{ color: '#888', fontSize: '13px', margin: '4px 0' }}>
-                              <strong>Срок:</strong> {new Date(goal.expected_deadline).toLocaleDateString('ru-RU')}
-                            </p>
-                          )}
-                          
-                          {goal.rejection_comment && goal.status === 'rejected' && (
-                            <div style={{ 
-                              marginTop: '12px', 
-                              padding: '12px', 
-                              backgroundColor: 'rgba(244,67,54,0.1)', 
-                              borderLeft: '3px solid #f44336', 
-                              borderRadius: '4px' 
-                            }}>
-                              <strong style={{ color: '#f44336', fontSize: '13px' }}>
-                                Причина отклонения:
-                              </strong>
-                              <p style={{ color: '#ccc', fontSize: '13px', margin: '4px 0 0 0' }}>
-                                {goal.rejection_comment}
-                              </p>
-                            </div>
-                          )}
-                          
-                          <div className="goal-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                            {goal.status === 'draft' && (
-                              <>
-                                <button 
-                                  className="btn-action btn-primary-small"
-                                  onClick={() => handleSubmitForApproval(goal.id)}
-                                >
-                                  Отправить на утверждение
-                                </button>
-                                <button 
-                                  className="btn-action btn-edit"
-                                  onClick={() => handleEditGoal(goal)}
-                                >
-                                  Редактировать
-                                </button>
-                                <button 
-                                  className="btn-action btn-delete"
-                                  onClick={() => handleDeleteGoal(goal.id)}
-                                >
-                                  Удалить
-                                </button>
-                              </>
-                            )}
-                            {goal.status === 'submitted' && (
-                              <button 
-                                className="btn-action btn-edit"
-                                onClick={() => handleEditGoal(goal)}
-                              >
-                                Редактировать
-                              </button>
-                            )}
-                            {goal.status === 'approved' && (
-                              <span style={{ color: '#4CAF50', fontSize: '13px' }}>
-                                Утверждено руководителем
+                    {(() => {
+                      const filteredGoals = goalsTab === 'current' 
+                        ? goals.filter(g => g.status !== 'completed')
+                        : goals.filter(g => g.status === 'completed');
+
+                      return filteredGoals.length > 0 ? (
+                        filteredGoals.map(goal => (
+                          <div 
+                            key={goal.id} 
+                            className="goal-item"
+                            onClick={() => handleShowGoalDetails(goal)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <div className="goal-header">
+                              <h3>{goal.title}</h3>
+                              <span className={`goal-status ${goal.status === 'submitted' ? 'in-progress' : goal.status === 'approved' ? 'approved' : goal.status === 'completed' ? 'completed' : 'planned'}`}>
+                                {getStatusLabel(goal.status)}
                               </span>
+                            </div>
+                            {goal.description && (
+                              <p style={{ color: '#666', fontSize: '14px', margin: '8px 0' }}>
+                                {goal.description.length > 100 ? goal.description.substring(0, 100) + '...' : goal.description}
+                              </p>
                             )}
-                            {goal.status === 'rejected' && (
-                              <button 
-                                className="btn-action btn-edit"
-                                onClick={() => handleEditGoal(goal)}
-                              >
-                                Исправить и отправить повторно
-                              </button>
+                            {goal.expected_deadline && (
+                              <p style={{ color: '#888', fontSize: '12px', margin: '4px 0' }}>
+                                <strong>Срок:</strong> {new Date(goal.expected_deadline).toLocaleDateString('ru-RU')}
+                              </p>
+                            )}
+                            
+                            {goalsTab === 'current' && (
+                              <div className="goal-actions" style={{ marginTop: '12px', display: 'flex', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
+                                {goal.status === 'draft' && (
+                                  <>
+                                    <button 
+                                      className="btn-action btn-primary-small"
+                                      onClick={() => handleSubmitForApproval(goal.id)}
+                                    >
+                                      Отправить на утверждение
+                                    </button>
+                                    <button 
+                                      className="btn-action btn-edit"
+                                      onClick={() => handleEditGoal(goal)}
+                                    >
+                                      Редактировать
+                                    </button>
+                                    <button 
+                                      className="btn-action btn-delete"
+                                      onClick={() => handleDeleteGoal(goal.id)}
+                                    >
+                                      Удалить
+                                    </button>
+                                  </>
+                                )}
+                                {goal.status === 'submitted' && (
+                                  <button 
+                                    className="btn-action btn-edit"
+                                    onClick={() => handleEditGoal(goal)}
+                                  >
+                                    Редактировать
+                                  </button>
+                                )}
+                                {goal.status === 'approved' && (
+                                  <span style={{ color: '#4CAF50', fontSize: '14px' }}>
+                                    Утверждено руководителем
+                                  </span>
+                                )}
+                                {goal.status === 'rejected' && (
+                                  <button 
+                                    className="btn-action btn-edit"
+                                    onClick={() => handleEditGoal(goal)}
+                                  >
+                                    Исправить и отправить повторно
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
+                          {goalsTab === 'current' ? 'Нет текущих целей. Создайте свою первую цель!' : 'Нет завершенных целей'}
                         </div>
-                      ))
-                    ) : (
-                      <div style={{ padding: '20px', textAlign: 'center', color: '#999' }}>
-                        Нет целей. Создайте свою первую цель!
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
-                  <button className="add-goal-button" onClick={() => setShowGoalForm(true)}>
-                    + Добавить новую цель
-                  </button>
+                  {goalsTab === 'current' && goals.filter(g => g.status !== 'completed').length < 5 && (
+                    <button className="add-goal-button" onClick={() => setShowGoalForm(true)}>
+                      + Добавить новую цель
+                    </button>
+                  )}
+                  {goalsTab === 'current' && goals.filter(g => g.status !== 'completed').length >= 5 && (
+                    <div style={{ padding: '12px', textAlign: 'center', color: '#FF6B00', fontSize: '14px' }}>
+                      ⚠ Достигнут лимит: 5 целей на период
+                    </div>
+                  )}
                 </>
               )}
-            </div>
-
-            <div className="section-card">
-              <h2 className="section-title">Оценка 360°</h2>
-              <div className="assessment-status">
-                <div className="status-item">
-                  <div className="status-number">4/5</div>
-                  <div className="status-label">Самооценка заполнена</div>
-                </div>
-                <div className="status-item">
-                  <div className="status-number">3/5</div>
-                  <div className="status-label">Ответы коллег</div>
-                </div>
-                <div className="status-item">
-                  <div className="status-number">Ожидание</div>
-                  <div className="status-label">Оценка руководителя</div>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -887,6 +934,94 @@ const EmployeeDashboard = ({ user, onLogout }) => {
           </div>
         </div>
       </div>
+
+      {/* Модальное окно с деталями цели */}
+      {showGoalDetailsModal && selectedGoalDetails && (
+        <div className="modal-overlay" onClick={() => setShowGoalDetailsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h2>Детали цели</h2>
+              <button className="modal-close" onClick={() => setShowGoalDetailsModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ color: '#FF6B00', marginBottom: '10px' }}>{selectedGoalDetails.title}</h3>
+                <span className={`goal-status ${selectedGoalDetails.status === 'submitted' ? 'in-progress' : selectedGoalDetails.status === 'approved' ? 'approved' : selectedGoalDetails.status === 'completed' ? 'completed' : 'planned'}`}>
+                  {getStatusLabel(selectedGoalDetails.status)}
+                </span>
+              </div>
+
+              {selectedGoalDetails.description && (
+                <div style={{ marginBottom: '5px' }}>
+                  <strong style={{ color: '#ccc' }}>Описание:</strong>
+                  <p style={{ color: '#999', marginTop: '5px' }}>{selectedGoalDetails.description}</p>
+                </div>
+              )}
+
+              {selectedGoalDetails.expected_results && (
+                <div style={{ marginBottom: '5px' }}>
+                  <strong style={{ color: '#ccc' }}>Ожидаемый результат:</strong>
+                  <p style={{ color: '#999', marginTop: '5px' }}>{selectedGoalDetails.expected_results}</p>
+                </div>
+              )}
+
+              {selectedGoalDetails.key_tasks && (
+                <div style={{ marginBottom: '5px' }}>
+                  <strong style={{ color: '#ccc' }}>Ключевые задачи:</strong>
+                  <p style={{ color: '#999', marginTop: '5px' }}>{selectedGoalDetails.key_tasks}</p>
+                </div>
+              )}
+
+              {selectedGoalDetails.expected_deadline && (
+                <div style={{ marginBottom: '5px' }}>
+                  <strong style={{ color: '#ccc' }}>Срок выполнения:</strong>
+                  <p style={{ color: '#999', marginTop: '5px' }}>
+                    {new Date(selectedGoalDetails.expected_deadline).toLocaleDateString('ru-RU', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                </div>
+              )}
+
+              {selectedGoalDetails.rejection_comment && selectedGoalDetails.status === 'rejected' && (
+                <div style={{ 
+                  marginTop: '20px', 
+                  padding: '15px', 
+                  backgroundColor: 'rgba(244,67,54,0.1)', 
+                  borderLeft: '4px solid #f44336', 
+                  borderRadius: '4px' 
+                }}>
+                  <strong style={{ color: '#f44336' }}>Причина отклонения:</strong>
+                  <p style={{ color: '#ccc', marginTop: '8px' }}>{selectedGoalDetails.rejection_comment}</p>
+                </div>
+              )}
+
+              {selectedGoalDetails.manager_comment && (
+                <div style={{ 
+                  marginTop: '20px', 
+                  padding: '15px', 
+                  backgroundColor: 'rgba(76,175,80,0.1)', 
+                  borderLeft: '4px solid #4CAF50', 
+                  borderRadius: '4px' 
+                }}>
+                  <strong style={{ color: '#4CAF50' }}>Комментарий руководителя:</strong>
+                  <p style={{ color: '#ccc', marginTop: '8px' }}>{selectedGoalDetails.manager_comment}</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn-secondary" 
+                onClick={() => setShowGoalDetailsModal(false)}
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
