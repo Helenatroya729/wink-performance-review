@@ -11,7 +11,6 @@ const SelfAssessment = ({ user, onLogout }) => {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [prStatuses, setPrStatuses] = useState([]);
   // const [existingAssessment, setExistingAssessment] = useState(null); // Временно не используется
   
   const [assessment, setAssessment] = useState({
@@ -30,29 +29,17 @@ const SelfAssessment = ({ user, onLogout }) => {
     task_satisfaction_rating: 5
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const loadData = async () => {
     try {
       setLoading(true);
       
-      // Загружаем индивидуальные периоды сотрудника
-      const periodsData = await api.employeeReviewPeriods.get(user.id);
+      // Загружаем мои периоды с новым API
+      const myPeriodsData = await api.reviewPeriods.getMy();
       
-      // Загружаем статусы Performance Review для каждого периода
-      const statusesPromises = periodsData.map(period => 
-        api.performanceReview.getStatus(period.id)
+      // Показываем только периоды со статусом 'in_progress'
+      const availablePeriods = myPeriodsData.filter(period => 
+        period.status === 'in_progress'
       );
-      const statusesData = await Promise.all(statusesPromises);
-      setPrStatuses(statusesData);
-      
-      // Показываем только периоды со статусом 'available' или 'in_progress'
-      const availablePeriods = periodsData.filter((period, index) => {
-        const status = statusesData[index]?.status;
-        return status === 'available' || status === 'in_progress';
-      });
       
       setCycles(availablePeriods);
       
@@ -120,21 +107,24 @@ const SelfAssessment = ({ user, onLogout }) => {
     }
 
     try {
-      // TODO: Создать API эндпоинт для сохранения самооценки
-      console.log('Самооценка за период:', {
-        cycle_id: selectedCycle.id,
-        user_id: user.id,
-        ...assessment
-      });
+      // Сохраняем самооценку
+      await api.reviewPeriods.completeSelfAssessment(selectedCycle.id);
       
       alert('Самооценка успешно сохранена!');
       setShowForm(false);
       setSelectedCycle(null);
       loadData();
     } catch (error) {
+      console.error('Ошибка при сохранении самооценки:', error);
       alert('Ошибка: ' + error.message);
     }
   };
+
+  // Загружаем данные при монтировании
+  useEffect(() => {
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Запускаем только один раз
 
   return (
     <div className="dashboard">
@@ -169,7 +159,6 @@ const SelfAssessment = ({ user, onLogout }) => {
               ) : cycles.length > 0 ? (
                 <div className="goals-list">
                   {cycles.map(cycle => {
-                    const prStatus = prStatuses.find(s => s.period_id === cycle.id);
                     const cycleGoals = goals.filter(g => {
                       // Фильтруем цели по датам периода
                       const goalDate = new Date(g.created_at || g.start_date);
@@ -178,14 +167,19 @@ const SelfAssessment = ({ user, onLogout }) => {
                       return g.status === 'approved' && goalDate >= periodStart && goalDate <= periodEnd;
                     });
                     
+                    // Определяем статус периода
+                    const isCompleted = cycle.self_assessment_completed;
+                    const statusText = isCompleted ? 'Завершена' : 'Активный';
+                    const statusColor = isCompleted ? '#4CAF50' : '#FF6B00';
+                    
                     return (
                       <div key={cycle.id} className="goal-item">
                         <div className="goal-header">
                           <h3>{cycle.name}</h3>
                           <span className="goal-status" style={{ 
-                            backgroundColor: prStatus?.status === 'available' ? '#4CAF50' : prStatus?.status === 'in_progress' ? '#FF6B00' : '#999' 
+                            backgroundColor: statusColor
                           }}>
-                            {prStatus?.status === 'available' ? 'Активный' : prStatus?.status === 'in_progress' ? 'В процессе' : 'Доступен'}
+                            {statusText}
                           </span>
                         </div>
                         
@@ -198,36 +192,115 @@ const SelfAssessment = ({ user, onLogout }) => {
                           </p>
                         </div>
                         
-                        {cycleGoals.length > 0 && (
-                          <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(255,107,0,0.05)', borderRadius: '6px' }}>
-                            <strong style={{ color: '#FF6B00', fontSize: '13px' }}>Ваши цели в этом периоде:</strong>
-                            <ul style={{ margin: '8px 0 0 20px', padding: 0, color: '#ccc', fontSize: '13px' }}>
-                              {cycleGoals.slice(0, 3).map(g => (
-                                <li key={g.id} style={{ marginTop: '4px' }}>{g.title}</li>
-                              ))}
-                              {cycleGoals.length > 3 && (
-                                <li style={{ marginTop: '4px', color: '#999' }}>
-                                  и еще {cycleGoals.length - 3}...
-                                </li>
-                              )}
-                            </ul>
+                        {/* Если самооценка завершена */}
+                        {isCompleted ? (
+                          <div style={{ 
+                            marginTop: '16px', 
+                            padding: '16px', 
+                            background: 'rgba(76, 175, 80, 0.1)',
+                            border: '1px solid #4CAF50',
+                            borderRadius: '8px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                              <span style={{ fontSize: '24px' }}>✅</span>
+                              <strong style={{ color: '#4CAF50', fontSize: '16px' }}>Самооценка завершена!</strong>
+                            </div>
+                            <p style={{ color: '#ccc', fontSize: '14px', margin: '8px 0' }}>
+                              Ваша самооценка успешно отправлена {cycle.self_assessment_completed_at && 
+                                `(${new Date(cycle.self_assessment_completed_at).toLocaleDateString('ru-RU')})`
+                              }
+                            </p>
+                            <div style={{ 
+                              marginTop: '12px', 
+                              padding: '12px',
+                              background: 'rgba(255, 107, 0, 0.1)',
+                              borderRadius: '6px',
+                              borderLeft: '3px solid #FF6B00'
+                            }}>
+                              <p style={{ color: '#FF6B00', fontWeight: '600', fontSize: '14px', margin: '0 0 8px 0' }}>
+                                📋 Следующий шаг
+                              </p>
+                              <p style={{ color: '#ccc', fontSize: '13px', margin: 0 }}>
+                                Запросите оценку у коллег (минимум 3 человека). 
+                                Перейдите в раздел "Оценка коллег" для отправки запросов.
+                              </p>
+                              <button
+                                onClick={() => navigate('/peer-feedback')}
+                                style={{
+                                  marginTop: '12px',
+                                  padding: '8px 16px',
+                                  background: '#FF6B00',
+                                  color: '#000',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontWeight: '600',
+                                  fontSize: '13px'
+                                }}
+                              >
+                                Запросить оценку коллег →
+                              </button>
+                            </div>
                           </div>
+                        ) : (
+                          <>
+                            {/* Проверяем статус периода */}
+                            {cycle.status !== 'in_progress' ? (
+                              <div style={{ 
+                                marginTop: '16px', 
+                                padding: '16px', 
+                                background: 'rgba(255, 152, 0, 0.1)',
+                                border: '1px solid #FF9800',
+                                borderRadius: '8px',
+                                textAlign: 'center'
+                              }}>
+                                <div style={{ fontSize: '32px', marginBottom: '8px' }}>⏳</div>
+                                <p style={{ color: '#FF9800', fontWeight: '600', fontSize: '15px', margin: '0 0 8px 0' }}>
+                                  Performance Review еще не начат
+                                </p>
+                                <p style={{ color: '#ccc', fontSize: '13px', margin: 0, lineHeight: '1.6' }}>
+                                  {cycle.status === 'not_started' && 'Дождитесь утверждения HR для начала оценки'}
+                                  {cycle.status === 'pending_manager_approval' && 'Ожидается утверждение руководителя'}
+                                  {cycle.status === 'pending_hr_approval' && 'Ожидается утверждение HR'}
+                                  {cycle.status === 'completed' && 'Период оценки завершен'}
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                {cycleGoals.length > 0 && (
+                                  <div style={{ marginTop: '12px', padding: '12px', backgroundColor: 'rgba(255,107,0,0.05)', borderRadius: '6px' }}>
+                                    <strong style={{ color: '#FF6B00', fontSize: '13px' }}>Ваши цели в этом периоде:</strong>
+                                    <ul style={{ margin: '8px 0 0 20px', padding: 0, color: '#ccc', fontSize: '13px' }}>
+                                      {cycleGoals.slice(0, 3).map(g => (
+                                        <li key={g.id} style={{ marginTop: '4px' }}>{g.title}</li>
+                                      ))}
+                                      {cycleGoals.length > 3 && (
+                                        <li style={{ marginTop: '4px', color: '#999' }}>
+                                          и еще {cycleGoals.length - 3}...
+                                        </li>
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                                
+                                <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                  <button 
+                                    className="btn-action btn-primary-small"
+                                    onClick={() => handleStartAssessment(cycle)}
+                                    disabled={cycleGoals.length === 0}
+                                  >
+                                    Заполнить самооценку
+                                  </button>
+                                  {cycleGoals.length === 0 && (
+                                    <span style={{ fontSize: '13px', color: '#999' }}>
+                                      Нет утвержденных целей для оценки
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </>
                         )}
-                        
-                        <div style={{ marginTop: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-                          <button 
-                            className="btn-action btn-primary-small"
-                            onClick={() => handleStartAssessment(cycle)}
-                            disabled={cycleGoals.length === 0}
-                          >
-                            Заполнить самооценку
-                          </button>
-                          {cycleGoals.length === 0 && (
-                            <span style={{ fontSize: '13px', color: '#999' }}>
-                              Нет утвержденных целей для оценки
-                            </span>
-                          )}
-                        </div>
                       </div>
                     );
                   })}

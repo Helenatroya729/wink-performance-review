@@ -33,6 +33,14 @@ function EmployeeDetails() {
 
       // Используем новый эндпоинт для получения всей информации
       const cycleId = selectedCycle !== 'all' ? selectedCycle : null;
+      
+      // Проверяем что api.manager существует перед вызовом
+      if (!api.manager || !api.manager.getEmployeeDetails) {
+        console.error('API manager.getEmployeeDetails не доступен');
+        setLoading(false);
+        return;
+      }
+      
       const data = await api.manager.getEmployeeDetails(employeeId, cycleId);
       
       setEmployee(data.employee);
@@ -50,9 +58,10 @@ function EmployeeDetails() {
     }
   };
 
-  const filteredGoals = selectedCycle === 'all' 
-    ? goals 
-    : goals.filter(g => g.cycle_id === parseInt(selectedCycle));
+  // Удалена неиспользуемая переменная filteredGoals
+  // const filteredGoals = selectedCycle === 'all' 
+  //   ? goals 
+  //   : goals.filter(g => g.cycle_id === parseInt(selectedCycle));
 
   const getStatusBadge = (status) => {
     const badges = {

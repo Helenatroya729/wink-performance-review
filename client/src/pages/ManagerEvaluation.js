@@ -274,7 +274,7 @@ const ManagerEvaluation = ({ user, onLogout }) => {
                 <div style={{ display: 'grid', gap: '16px' }}>
                   {readyEmployees.map(emp => {
                     const startDate = new Date(emp.start_date);
-                    const endDate = new Date(emp.end_date);
+                    // const endDate = new Date(emp.end_date); // Не используется
                     const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
                     const periodName = `Полугодие ${periodNum} - ${startDate.getFullYear()}`;
                     

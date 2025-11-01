@@ -12,9 +12,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
   const [pendingReviews, setPendingReviews] = useState([]);
   const [rating, setRating] = useState(null);
   const [myPeriods, setMyPeriods] = useState([]);
-  const [showEarlyRequestModal, setShowEarlyRequestModal] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState(null);
-  const [recommendations, setRecommendations] = useState([]);
+  // Удалены неиспользуемые переменные: showEarlyRequestModal, selectedPeriod, recommendations
   const [goalsTab, setGoalsTab] = useState('current'); // 'current' или 'completed'
   const [showGoalDetailsModal, setShowGoalDetailsModal] = useState(false);
   const [selectedGoalDetails, setSelectedGoalDetails] = useState(null);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
@@ -13,10 +13,6 @@ const DevelopmentPlan = ({ user, onLogout }) => {
   const [tasks, setTasks] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
-
-  useEffect(() => {
-    loadRecommendations();
-  }, []);
 
   const loadRecommendations = async () => {
     try {
@@ -40,7 +36,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
     try {
       // Загружаем задачи для этой рекомендации (пока моковые данные)
       setTasks([
-        { id: 1, text: 'Пройти курс по лидерству', completed: false, dueDate: '2025-12-01' },
+        { id: 1, text: 'Пройти курс по лидерству', completed: false, dueDate: '2025-12-30' },
         { id: 2, text: 'Участвовать в кросс-функциональном проекте', completed: true, dueDate: '2025-11-15' },
       ]);
     } catch (error) {
@@ -136,6 +132,12 @@ const DevelopmentPlan = ({ user, onLogout }) => {
   const completedTasks = tasks.filter(t => t.completed).length;
   const progress = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
 
+  // Загружаем рекомендации при монтировании
+  useEffect(() => {
+    loadRecommendations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Запускаем только один раз
+
   return (
     <div className="dashboard">
       <Header user={user} onLogout={onLogout} />
@@ -152,7 +154,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
             borderRadius: '4px',
             cursor: 'pointer',
             fontSize: '14px',
-            transition: 'background-color 0.2s'
+            transition: 'background-color 0.3s'
           }}
           onMouseOver={(e) => e.target.style.backgroundColor = '#666'}
           onMouseOut={(e) => e.target.style.backgroundColor = '#555'}
@@ -183,7 +185,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
             borderRadius: '12px',
             border: '1px solid rgba(76, 175, 80, 0.3)'
           }}>
-            <div style={{ color: '#4CAF50', fontSize: '14px', marginBottom: '5px' }}>
+            <div style={{ color: '#4CAF50', fontSize: '14px', marginBottom: '8px' }}>
               Задач выполнено
             </div>
             <div style={{ color: '#fff', fontSize: '28px', fontWeight: '700' }}>
@@ -192,12 +194,12 @@ const DevelopmentPlan = ({ user, onLogout }) => {
           </div>
 
           <div style={{
-            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
             padding: '20px',
             borderRadius: '12px',
-            border: '1px solid rgba(33, 150, 243, 0.3)'
+            border: '1px solid rgba(139, 92, 246, 0.3)'
           }}>
-            <div style={{ color: '#2196F3', fontSize: '14px', marginBottom: '5px' }}>
+            <div style={{ color: '#8B5CF6', fontSize: '14px', marginBottom: '8px' }}>
               Прогресс
             </div>
             <div style={{ color: '#fff', fontSize: '28px', fontWeight: '700' }}>
@@ -211,7 +213,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
             borderRadius: '12px',
             border: '1px solid rgba(255, 107, 0, 0.3)'
           }}>
-            <div style={{ color: '#FF6B00', fontSize: '14px', marginBottom: '5px' }}>
+            <div style={{ color: '#FF6B00', fontSize: '14px', marginBottom: '8px' }}>
               Рекомендаций получено
             </div>
             <div style={{ color: '#fff', fontSize: '28px', fontWeight: '700' }}>
@@ -241,14 +243,14 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                   style={{
                     padding: '15px',
                     backgroundColor: selectedRecommendation?.id === recommendation.id 
-                      ? 'rgba(255, 107, 0, 0.15)' 
+                      ? 'rgba(255, 107, 0, 0.2)' 
                       : 'rgba(255, 255, 255, 0.05)',
                     border: selectedRecommendation?.id === recommendation.id
                       ? '2px solid #FF6B00'
                       : '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.3s'
                   }}
                   onMouseEnter={(e) => {
                     if (selectedRecommendation?.id !== recommendation.id) {
@@ -280,10 +282,10 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                     </div>
                     {!recommendation.is_read && (
                       <span style={{
-                        padding: '2px 8px',
+                        padding: '4px 8px',
                         backgroundColor: '#FF6B00',
                         color: '#000',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
                         fontSize: '10px',
                         fontWeight: '700'
                       }}>
@@ -315,7 +317,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                 }}>
                   {[
                     { id: 'achievements', label: 'Достижения', color: '#4CAF50' },
-                    { id: 'improvements', label: 'Области улучшения', color: '#2196F3' },
+                    { id: 'improvements', label: 'Области улучшения', color: '#8B5CF6' },
                     { id: 'plan', label: 'План развития', color: '#FF6B00' }
                   ].map(tab => (
                     <button
@@ -330,7 +332,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                         cursor: 'pointer',
                         fontSize: '15px',
                         fontWeight: activeTab === tab.id ? '600' : '400',
-                        transition: 'all 0.2s',
+                        transition: 'all 0.3s',
                         marginBottom: '-2px'
                       }}
                     >
@@ -369,7 +371,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                   {activeTab === 'improvements' && (
                     <div>
                       <h3 style={{ 
-                        color: '#2196F3', 
+                        color: '#8B5CF6', 
                         marginBottom: '15px',
                         fontSize: '20px'
                       }}>
@@ -410,7 +412,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                             border: 'none',
                             borderRadius: '6px',
                             cursor: 'pointer',
-                            fontSize: '13px',
+                            fontSize: '14px',
                             fontWeight: '600'
                           }}
                         >
@@ -428,7 +430,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                       }}>
                         <div style={{ 
                           color: '#FF6B00', 
-                          fontSize: '13px',
+                          fontSize: '14px',
                           fontWeight: '600',
                           marginBottom: '8px'
                         }}>
@@ -483,7 +485,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                                 border: 'none',
                                 borderRadius: '6px',
                                 cursor: 'pointer',
-                                fontSize: '13px',
+                                fontSize: '14px',
                                 fontWeight: '600'
                               }}
                             >
@@ -501,7 +503,7 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                                 border: '1px solid rgba(255, 255, 255, 0.2)',
                                 borderRadius: '6px',
                                 cursor: 'pointer',
-                                fontSize: '13px'
+                                fontSize: '14px'
                               }}
                             >
                               Отмена
@@ -594,10 +596,10 @@ const DevelopmentPlan = ({ user, onLogout }) => {
                             justifyContent: 'space-between',
                             marginBottom: '8px'
                           }}>
-                            <span style={{ color: '#999', fontSize: '13px' }}>
+                            <span style={{ color: '#999', fontSize: '14px' }}>
                               Общий прогресс
                             </span>
-                            <span style={{ color: '#4CAF50', fontSize: '13px', fontWeight: '600' }}>
+                            <span style={{ color: '#4CAF50', fontSize: '14px', fontWeight: '600' }}>
                               {progress.toFixed(0)}%
                             </span>
                           </div>

@@ -42,15 +42,26 @@ const ManagerDashboard = ({ user, onLogout }) => {
   const loadData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Начинаем загрузку данных...');
+      
+      // Загружаем данные с обработкой ошибок для каждого запроса
       const [goalsData, statsData, reviewsData, periodsData, prRequestsData, managerEvalData, potentialData] = await Promise.all([
-        api.goals.getAll(),
-        api.dashboard.getStats(),
-        api.peerFeedback.getPendingReviews(),
-        api.get('/manager/team-employee-periods'),
-        api.reviewPeriods.getPendingManagerApproval(),
-        api.get('/manager-evaluation/ready-employees'),
-        api.get('/potential-assessment/ready-employees')
+        api.goals.getAll().catch(e => { console.warn('Ошибка загрузки целей:', e); return []; }),
+        api.dashboard.getStats().catch(e => { console.warn('Ошибка загрузки статистики:', e); return null; }),
+        api.peerFeedback.getPendingReviews().catch(e => { console.warn('Ошибка загрузки peer reviews:', e); return []; }),
+        api.get('/manager/team-employee-periods').catch(e => { console.warn('Ошибка загрузки периодов:', e); return []; }),
+        (api.reviewPeriods && api.reviewPeriods.getPendingManagerApproval ? api.reviewPeriods.getPendingManagerApproval() : Promise.resolve([])).catch(e => { console.warn('Ошибка загрузки PR запросов:', e); return []; }),
+        api.get('/manager-evaluation/ready-employees').catch(e => { console.warn('Ошибка загрузки оценок:', e); return []; }),
+        api.get('/potential-assessment/ready-employees').catch(e => { console.warn('Ошибка загрузки потенциала:', e); return []; })
       ]);
+      console.log('✅ Данные загружены:');
+      console.log('  - Цели команды:', goalsData?.length || 0);
+      console.log('  - Статистика:', statsData);
+      console.log('  - Периоды команды:', periodsData?.length || 0, periodsData);
+      console.log('  - Запросы PR:', prRequestsData?.length || 0);
+      console.log('  - Готовы к оценке:', managerEvalData?.length || 0);
+      console.log('  - Готовы к потенциалу:', potentialData?.length || 0);
+      
       setTeamGoals(goalsData);
       setStats(statsData);
       setPendingReviews(reviewsData);
@@ -58,11 +69,9 @@ const ManagerDashboard = ({ user, onLogout }) => {
       setPendingPRRequests(prRequestsData);
       setReadyForManagerEvaluation(managerEvalData);
       setReadyForPotentialAssessment(potentialData);
-      console.log('📋 Запросы на утверждение PR:', prRequestsData);
-      console.log('📝 Готовы к оценке по целям:', managerEvalData);
-      console.log('⭐ Готовы к оценке потенциала:', potentialData);
     } catch (error) {
-      console.error('Ошибка загрузки данных:', error);
+      console.error('❌ Ошибка загрузки данных:', error);
+      console.error('Детали ошибки:', error.response?.data || error.message);
     } finally {
       setLoading(false);
     }
@@ -174,6 +183,20 @@ const ManagerDashboard = ({ user, onLogout }) => {
   );
 
   const pendingCount = teamGoals.filter(g => g.status === 'submitted').length;
+  
+  // Подсчитываем статистику из загруженных данных, если API не вернуло stats
+  const calculatedStats = {
+    team_size: reviewPeriods.length || stats.team_size || 0,
+    team_goals: teamGoals.length || stats.team_goals || 0,
+    pending_approvals: pendingCount || stats.pending_approvals || 0,
+    approved_goals: teamGoals.filter(g => g.status === 'approved').length || stats.approved_goals || 0
+  };
+  
+  // Используем рассчитанную статистику
+  const displayStats = {
+    ...stats,
+    ...calculatedStats
+  };
 
   // Формируем уведомления для руководителя
   const notifications = [];
@@ -242,7 +265,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
 
         <div className="stats-grid">
           <div className="stat-card clickable" onClick={() => navigate('/team')} style={{ cursor: 'pointer' }}>
-            <div className="stat-value">{stats.team_size || 0}</div>
+            <div className="stat-value">{displayStats.team_size || 0}</div>
             <div className="stat-label">Сотрудников в команде</div>
           </div>
           <div className="stat-card clickable" style={{ borderColor: '#FF6B00', cursor: 'pointer' }} onClick={() => handleFilterAndScroll('submitted')}>
@@ -250,7 +273,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
             <div className="stat-label">Ожидают утверждения</div>
           </div>
           <div className="stat-card clickable" onClick={() => handleFilterAndScroll('all')} style={{ cursor: 'pointer' }}>
-            <div className="stat-value">{stats.team_goals || 0}</div>
+            <div className="stat-value">{displayStats.team_goals || 0}</div>
             <div className="stat-label">Всего целей команды</div>
           </div>
           <div className="stat-card clickable" onClick={() => handleFilterAndScroll('approved')} style={{ cursor: 'pointer' }}>
@@ -262,7 +285,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
         {/* Периоды Performance Review команды */}
         {reviewPeriods.length > 0 && (
           <div className="section-card" style={{ marginBottom: '30px' }}>
-            <h2 className="section-title">📅 Периоды Performance Review команды</h2>
+            <h2 className="section-title">Периоды Performance Review команды</h2>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -279,7 +302,7 @@ const ManagerDashboard = ({ user, onLogout }) => {
                     console.log('🔍 Period в таблице:', period);
                     
                     const startDate = new Date(period.start_date);
-                    const endDate = new Date(period.end_date);
+                    // const endDate = new Date(period.end_date); // Не используется
                     
                     // Определяем период по датам для отображения
                     const periodNum = startDate.getMonth() <= 5 ? 1 : 2;
@@ -288,42 +311,55 @@ const ManagerDashboard = ({ user, onLogout }) => {
                     // Определяем статус на основе реального статуса из базы
                     let statusColor = '#999';
                     let statusText = 'Не начат';
-                    let statusEmoji = '⚪';
+                    let statusEmoji = '';
                     
-                    if (period.potential_assessment_completed) {
+                    console.log('🔍 Статусы сотрудника:', {
+                      name: `${period.first_name} ${period.last_name}`,
+                      status: period.status,
+                      employee_status: period.employee_status,
+                      potential_assessment_completed: period.potential_assessment_completed,
+                      manager_goals_evaluation_completed: period.manager_goals_evaluation_completed
+                    });
+                    
+                    // Проверяем статус калькуляции сотрудника (приоритет выше всех других)
+                    if (period.status === 'awaiting_calculation' || period.employee_status === 'awaiting_calculation') {
+                      statusColor = '#FF6B00';
+                      statusText = 'Ожидает калькуляции';
+                      statusEmoji = '';
+                    } else if (period.potential_assessment_completed) {
                       // Все оценки завершены - ждем результатов от HR
                       statusColor = '#4CAF50';
                       statusText = 'Ждём результаты';
-                      statusEmoji = '🎯';
+                      statusEmoji = '';
                     } else if (period.manager_goals_evaluation_completed) {
                       // Оценка менеджера завершена - ждем оценку потенциала
                       statusColor = '#9333EA';
                       statusText = 'Оценить потенциал';
-                      statusEmoji = '⭐';
+                      statusEmoji = '';
                     } else if (period.status === 'completed') {
                       statusColor = '#4CAF50';
                       statusText = 'Завершен';
-                      statusEmoji = '✅';
+                      statusEmoji = '';
                     } else if (period.status === 'in_progress') {
                       statusColor = '#FF6B00';
                       statusText = 'В процессе';
-                      statusEmoji = '🔥';
+                      statusEmoji = '';
                     } else if (period.status === 'pending_manager_approval') {
                       statusColor = '#F59E0B';
                       statusText = 'Ожидает руководителя';
-                      statusEmoji = '⏳';
+                      statusEmoji = '';
                     } else if (period.status === 'pending_hr_approval') {
                       statusColor = '#3B82F6';
                       statusText = 'Ожидает HR';
-                      statusEmoji = '�';
+                      statusEmoji = '';
                     } else if (period.status === 'rejected_by_manager') {
                       statusColor = '#EF4444';
                       statusText = 'Отклонен';
-                      statusEmoji = '❌';
+                      statusEmoji = '';
                     } else if (period.status === 'not_started') {
                       statusColor = '#999';
                       statusText = 'Не начат';
-                      statusEmoji = '⚪';
+                      statusEmoji = '';
                     }
 
                     return (
@@ -346,14 +382,14 @@ const ManagerDashboard = ({ user, onLogout }) => {
                             backgroundColor: `${statusColor}20`,
                             fontSize: '13px'
                           }}>
-                            {statusEmoji} {statusText}
+                            {statusText}
                           </span>
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           {period.potential_assessment_completed ? (
                             // Все оценки завершены - показываем статус
                             <span style={{ color: '#4CAF50', fontSize: '13px' }}>
-                              ✅ Завершено
+                              Завершено
                             </span>
                           ) : period.manager_goals_evaluation_completed ? (
                             // Оценка по целям завершена - показываем кнопку для оценки потенциала

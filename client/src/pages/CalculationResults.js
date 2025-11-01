@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+﻿import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
 import './Dashboard.css';
 
 const CalculationResults = ({ user, onLogout }) => {
   const { employeeId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState(null);
@@ -13,6 +14,8 @@ const CalculationResults = ({ user, onLogout }) => {
   const [summaryText, setSummaryText] = useState('');
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
+  const [periodId, setPeriodId] = useState(searchParams.get('periodId') || null);
+  const [periodStatus, setPeriodStatus] = useState(null); // Статус периода: awaiting_calculation или calculated
   
   // Два отдельных блока рекомендаций
   const [employeeRecommendations, setEmployeeRecommendations] = useState({
@@ -22,12 +25,6 @@ const CalculationResults = ({ user, onLogout }) => {
   });
   const [managerRecommendations, setManagerRecommendations] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
-
-  useEffect(() => {
-    if (user.role === 'hr' || user.role === 'admin' || user.role === 'manager') {
-      loadEmployees();
-    }
-  }, []);
 
   const loadEmployees = async () => {
     try {
@@ -61,6 +58,21 @@ const CalculationResults = ({ user, onLogout }) => {
       
       // Загружаем результаты оценки для выбранного сотрудника
       const data = await api.get(`/employee/calculation-results/${empId}`);
+      
+      // Если есть periodId, загружаем статус периода
+      if (periodId) {
+        try {
+          console.log('🔍 Загружаем статус для periodId:', periodId);
+          const periodData = await api.get(`/hr/period/${periodId}/status`);
+          console.log('📋 Получен ответ от сервера:', periodData);
+          setPeriodStatus(periodData.status);
+          console.log('✅ Установлен periodStatus:', periodData.status);
+        } catch (periodError) {
+          console.error('⚠️ Ошибка при загрузке статуса периода:', periodError);
+        }
+      } else {
+        console.warn('⚠️ periodId не найден в URL!');
+      }
       
       // Загружаем детальные данные для AI (все комментарии и оценки)
       try {
@@ -139,8 +151,47 @@ const CalculationResults = ({ user, onLogout }) => {
     }
   };
 
-  // Генерация рекомендаций для сотрудника с помощью AI
-  const generateEmployeeRecommendationsAI = async () => {
+  // Сохранение калькуляции (меняет статус на calculated и отправляет уведомления)
+  const saveCalculation = async () => {
+    // Проверяем, что обе рекомендации сгенерированы
+    const employeeRecText = `${employeeRecommendations.achievements}\n\n${employeeRecommendations.improvements}\n\n${employeeRecommendations.developmentPlan}`.trim();
+    const managerRecText = managerRecommendations.trim();
+    
+    if (!employeeRecText || !managerRecText) {
+      alert('Пожалуйста, сгенерируйте обе рекомендации (для сотрудника и для руководителя) перед сохранением калькуляции');
+      return;
+    }
+
+    if (!periodId) {
+      alert('Ошибка: не найден ID периода оценки');
+      return;
+    }
+
+    if (!window.confirm('Вы уверены, что хотите сохранить калькуляцию? После этого статус изменится на "Калькуляция проведена" и сотрудник с руководителем получат уведомления.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await api.post(`/hr/save-calculation/${periodId}`, {
+        employeeRecommendation: employeeRecText,
+        managerRecommendation: managerRecText
+      });
+      
+      alert('✅ Калькуляция успешно сохранена! Статус изменен на "Калькуляция проведена", уведомления отправлены.');
+      
+      // Возвращаемся на HR Dashboard
+      navigate('/hr');
+    } catch (error) {
+      console.error('Ошибка сохранения калькуляции:', error);
+      alert('Ошибка при сохранении калькуляции: ' + (error.message || 'Неизвестная ошибка'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Генерация рекомендаций AI для сотрудника
+  const handleGenerateAIRecommendations = async () => {
     if (!results) {
       alert('Данные сотрудника еще не загружены');
       return;
@@ -148,6 +199,20 @@ const CalculationResults = ({ user, onLogout }) => {
 
     setIsLoadingAI(true);
     try {
+      // Загружаем триггеры компании
+      let companyTriggers = [];
+      try {
+        const triggersData = await api.get('/hr/triggers');
+        companyTriggers = triggersData || [];
+      } catch (e) {
+        console.warn('Не удалось загрузить триггеры компании:', e);
+        companyTriggers = [
+          { word: 'лидерство', recommendation: 'Рекомендуется развитие управленческих компетенций' },
+          { word: 'коммуникация', recommendation: 'Рекомендуется тренинг по эффективной коммуникации' },
+          { word: 'инициатива', recommendation: 'Рекомендуется включение в кросс-функциональные проекты' }
+        ];
+      }
+
       // Подготавливаем детальные данные для отправки в AI микросервис
       const aiRequestData = {
         employee_name: results.employee.name,
@@ -157,6 +222,7 @@ const CalculationResults = ({ user, onLogout }) => {
         self_score: results.scores.selfScore,
         manager_score: results.scores.managerScore,
         peer_score: results.scores.peerScore,
+        potential_score: results.scores.potentialScore || 0,
         total_score: results.scores.totalScore,
         evaluation_status: results.employee.evaluationStatus,
         
@@ -176,7 +242,10 @@ const CalculationResults = ({ user, onLogout }) => {
         peer_reviews: results.details?.peerReviews || [],
         
         // Оценка потенциала (9-Box)
-        potential_assessment: results.details?.potentialAssessment || null
+        potential_assessment: results.details?.potentialAssessment || null,
+
+        // Триггеры компании для учета в рекомендациях
+        company_triggers: companyTriggers
       };
 
       console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис:', aiRequestData);
@@ -213,8 +282,8 @@ const CalculationResults = ({ user, onLogout }) => {
     }
   };
 
-  // Генерация управленческих рекомендаций с помощью AI
-  const generateManagerRecommendationsAI = async () => {
+  // Генерация управленческих рекомендаций AI (для менеджера)
+  const handleGenerateManagerAIRecommendations = async () => {
     if (!results) {
       alert('Данные сотрудника еще не загружены');
       return;
@@ -222,6 +291,20 @@ const CalculationResults = ({ user, onLogout }) => {
 
     setIsLoadingAI(true);
     try {
+      // Загружаем триггеры компании
+      let companyTriggers = [];
+      try {
+        const triggersData = await api.get('/hr/triggers');
+        companyTriggers = triggersData || [];
+      } catch (e) {
+        console.warn('Не удалось загрузить триггеры компании:', e);
+        companyTriggers = [
+          { word: 'лидерство', recommendation: 'Рекомендуется развитие управленческих компетенций' },
+          { word: 'коммуникация', recommendation: 'Рекомендуется тренинг по эффективной коммуникации' },
+          { word: 'инициатива', recommendation: 'Рекомендуется включение в кросс-функциональные проекты' }
+        ];
+      }
+
       // Подготавливаем детальные данные для отправки в AI микросервис
       const aiRequestData = {
         employee_name: results.employee.name,
@@ -231,6 +314,7 @@ const CalculationResults = ({ user, onLogout }) => {
         self_score: results.scores.selfScore,
         manager_score: results.scores.managerScore,
         peer_score: results.scores.peerScore,
+        potential_score: results.scores.potentialScore || 0,
         total_score: results.scores.totalScore,
         evaluation_status: results.employee.evaluationStatus,
         
@@ -250,7 +334,10 @@ const CalculationResults = ({ user, onLogout }) => {
         peer_reviews: results.details?.peerReviews || [],
         
         // Оценка потенциала (9-Box)
-        potential_assessment: results.details?.potentialAssessment || null
+        potential_assessment: results.details?.potentialAssessment || null,
+
+        // Триггеры компании для учета в рекомендациях
+        company_triggers: companyTriggers
       };
 
       console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис для управленческих рекомендаций:', aiRequestData);
@@ -282,6 +369,29 @@ const CalculationResults = ({ user, onLogout }) => {
       setIsLoadingAI(false);
     }
   };
+
+  // Определяем, можно ли редактировать поля
+  // Редактировать можно ТОЛЬКО когда период в статусе awaiting_calculation или in_progress
+  const canEditPeriod = periodStatus === 'awaiting_calculation' || periodStatus === 'in_progress';
+  const isReadOnly = !canEditPeriod;
+  const canEdit = canEditPeriod && (user.role === 'hr' || user.role === 'admin');
+
+  console.log('🎯 Состояние компонента:', {
+    periodId,
+    periodStatus,
+    canEditPeriod,
+    isReadOnly,
+    canEdit,
+    userRole: user.role
+  });
+
+  // Загрузка данных при монтировании компонента
+  useEffect(() => {
+    if (user.role === 'hr' || user.role === 'admin' || user.role === 'manager') {
+      loadEmployees();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Запускаем только один раз при монтировании
 
   return (
     <div className="dashboard">
@@ -464,6 +574,24 @@ const CalculationResults = ({ user, onLogout }) => {
                 {results.peerReviewsCount} {results.peerReviewsCount === 1 ? 'отзыв' : 'отзывов'}
               </div>
             </div>
+
+            {/* Оценка потенциала */}
+            <div style={{
+              backgroundColor: 'rgba(255,255,255,0.05)',
+              padding: '20px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <div style={{ color: '#999', fontSize: '14px', marginBottom: '8px' }}>
+                Оценка потенциала
+              </div>
+              <div style={{ color: '#FF6B00', fontSize: '32px', fontWeight: '700' }}>
+                {(results.potentialScore && results.potentialScore > 0) ? results.potentialScore.toFixed(2) : '—'}
+              </div>
+              <div style={{ color: '#ccc', fontSize: '13px', marginTop: '5px' }}>
+                {results.potentialScore > 0 ? 'Заполнено' : 'Не заполнено'}
+              </div>
+            </div>
           </div>
 
           {/* Формула расчета */}
@@ -479,7 +607,8 @@ const CalculationResults = ({ user, onLogout }) => {
             <div style={{ color: '#fff', fontSize: '15px', fontFamily: 'monospace' }}>
               ({(results.selfScore && results.selfScore > 0) ? results.selfScore.toFixed(2) : '0'} 
               {(results.managerScore && results.managerScore > 0 && results.role !== 'manager') ? ` + ${results.managerScore.toFixed(2)}` : ''} 
-              {(results.peerScore && results.peerScore > 0) ? ` + ${results.peerScore.toFixed(2)}` : ''}) / {results.evaluationsCount || 1} = {(results.totalScore || 0).toFixed(2)}
+              {(results.peerScore && results.peerScore > 0) ? ` + ${results.peerScore.toFixed(2)}` : ''}
+              {(results.potentialScore && results.potentialScore > 0) ? ` + ${results.potentialScore.toFixed(2)}` : ''}) / {results.evaluationsCount || 1} = {(results.totalScore || 0).toFixed(2)}
             </div>
           </div>
         </div>
@@ -512,35 +641,52 @@ const CalculationResults = ({ user, onLogout }) => {
             <h2 style={{ color: '#FF6B00', margin: 0, fontSize: '20px' }}>
               Рекомендации для сотрудника
             </h2>
-            <button
-              onClick={generateEmployeeRecommendationsAI}
-              disabled={isLoadingAI}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: isLoadingAI ? '#666' : '#4CAF50',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: isLoadingAI ? 'not-allowed' : 'pointer',
-                fontSize: '13px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                opacity: isLoadingAI ? 0.7 : 1
-              }}
-            >
-              <span>{isLoadingAI ? '⏳' : '🤖'}</span> {isLoadingAI ? 'Генерация...' : 'Помощь ИИ'}
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleGenerateAIRecommendations}
+                disabled={isLoadingAI}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: isLoadingAI ? '#666' : '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: isLoadingAI ? 'not-allowed' : 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: isLoadingAI ? 0.7 : 1
+                }}
+              >
+                <span>{isLoadingAI ? '⏳' : '🤖'}</span> {isLoadingAI ? 'Генерация...' : 'Помощь ИИ'}
+              </button>
+            )}
           </div>
-          <p style={{ 
-            color: 'rgba(255,255,255,0.6)', 
-            fontSize: '14px', 
-            marginBottom: '20px',
-            lineHeight: '1.5'
-          }}>
-            Эти рекомендации будут отправлены сотруднику для его развития и самосовершенствования.
-          </p>
+          {isReadOnly && (
+            <p style={{ 
+              color: 'rgba(76, 175, 80, 0.8)', 
+              fontSize: '14px', 
+              marginBottom: '20px',
+              padding: '10px',
+              backgroundColor: 'rgba(76, 175, 80, 0.1)',
+              borderRadius: '6px',
+              border: '1px solid rgba(76, 175, 80, 0.3)'
+            }}>
+              ✅ Калькуляция завершена. Рекомендации сохранены и отправлены.
+            </p>
+          )}
+          {!isReadOnly && (
+            <p style={{ 
+              color: 'rgba(255,255,255,0.6)', 
+              fontSize: '14px', 
+              marginBottom: '20px',
+              lineHeight: '1.5'
+            }}>
+              Эти рекомендации будут отправлены сотруднику для его развития и самосовершенствования.
+            </p>
+          )}
 
           {/* Ключевые достижения */}
           <div style={{ marginBottom: '20px' }}>
@@ -559,19 +705,21 @@ const CalculationResults = ({ user, onLogout }) => {
                 ...employeeRecommendations,
                 achievements: e.target.value
               })}
+              readOnly={isReadOnly}
               placeholder="Например: Успешно завершил проект X, показал высокие результаты в области Y..."
               style={{
                 width: '100%',
                 minHeight: '120px',
                 padding: '15px',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: isReadOnly ? '#1a1a1a' : '#2a2a2a',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '8px',
                 color: '#fff',
                 fontSize: '14px',
                 lineHeight: '1.6',
                 resize: 'vertical',
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                cursor: isReadOnly ? 'default' : 'text'
               }}
             />
           </div>
@@ -593,19 +741,21 @@ const CalculationResults = ({ user, onLogout }) => {
                 ...employeeRecommendations,
                 improvements: e.target.value
               })}
+              readOnly={isReadOnly}
               placeholder="Например: Рекомендуется усилить навыки коммуникации, развить управленческие компетенции..."
               style={{
                 width: '100%',
                 minHeight: '120px',
                 padding: '15px',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: isReadOnly ? '#1a1a1a' : '#2a2a2a',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '8px',
                 color: '#fff',
                 fontSize: '14px',
                 lineHeight: '1.6',
                 resize: 'vertical',
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                cursor: isReadOnly ? 'default' : 'text'
               }}
             />
           </div>
@@ -627,23 +777,26 @@ const CalculationResults = ({ user, onLogout }) => {
                 ...employeeRecommendations,
                 developmentPlan: e.target.value
               })}
+              readOnly={isReadOnly}
               placeholder="Например: Пройти тренинг по лидерству, участвовать в кросс-функциональных проектах..."
               style={{
                 width: '100%',
                 minHeight: '120px',
                 padding: '15px',
-                backgroundColor: '#2a2a2a',
+                backgroundColor: isReadOnly ? '#1a1a1a' : '#2a2a2a',
                 border: '1px solid rgba(255,255,255,0.1)',
                 borderRadius: '8px',
                 color: '#fff',
                 fontSize: '14px',
                 lineHeight: '1.6',
                 resize: 'vertical',
-                fontFamily: 'inherit'
+                fontFamily: 'inherit',
+                cursor: isReadOnly ? 'default' : 'text'
               }}
             />
           </div>
 
+          {canEdit && (
           <div style={{ display: 'flex', gap: '12px', marginTop: '15px', alignItems: 'center' }}>
             <button
               onClick={sendEmployeeRecommendations}
@@ -674,6 +827,7 @@ const CalculationResults = ({ user, onLogout }) => {
               Рекомендации будут доступны сотруднику в личном кабинете
             </span>
           </div>
+          )}
         </div>
 
         {/* Блок "Управленческие рекомендации" */}
@@ -682,8 +836,9 @@ const CalculationResults = ({ user, onLogout }) => {
             <h2 style={{ color: '#FF6B00', margin: 0, fontSize: '20px' }}>
               Управленческие рекомендации для руководителя
             </h2>
+            {canEdit && (
             <button
-              onClick={generateManagerRecommendationsAI}
+              onClick={handleGenerateManagerAIRecommendations}
               disabled={isLoadingAI}
               style={{
                 padding: '8px 16px',
@@ -702,7 +857,9 @@ const CalculationResults = ({ user, onLogout }) => {
             >
               <span>{isLoadingAI ? '⏳' : '🤖'}</span> {isLoadingAI ? 'Генерация...' : 'Помощь ИИ'}
             </button>
+            )}
           </div>
+          {!isReadOnly && (
           <p style={{ 
             color: 'rgba(255,255,255,0.6)', 
             fontSize: '14px', 
@@ -711,24 +868,28 @@ const CalculationResults = ({ user, onLogout }) => {
           }}>
             Эти рекомендации будут отправлены непосредственному руководителю сотрудника для принятия управленческих решений.
           </p>
+          )}
           <textarea
             value={managerRecommendations}
             onChange={(e) => setManagerRecommendations(e.target.value)}
+            readOnly={isReadOnly}
             placeholder="Например: Рекомендуется рассмотреть повышение, назначить на роль тимлида, включить в кадровый резерв, организовать дополнительное обучение..."
             style={{
               width: '100%',
               minHeight: '180px',
               padding: '15px',
-              backgroundColor: '#2a2a2a',
+              backgroundColor: isReadOnly ? '#1a1a1a' : '#2a2a2a',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '8px',
               color: '#fff',
               fontSize: '15px',
               lineHeight: '1.6',
               resize: 'vertical',
-              fontFamily: 'inherit'
+              fontFamily: 'inherit',
+              cursor: isReadOnly ? 'default' : 'text'
             }}
           />
+          {canEdit && (
           <div style={{ display: 'flex', gap: '12px', marginTop: '15px', alignItems: 'center' }}>
             <button
               onClick={sendManagerRecommendations}
@@ -759,7 +920,55 @@ const CalculationResults = ({ user, onLogout }) => {
               Рекомендации будут доступны руководителю в его дашборде
             </span>
           </div>
+          )}
         </div>
+
+        {/* Большая зеленая кнопка "Сохранить калькуляцию" */}
+        {canEdit && periodId && (
+          <div className="section-card" style={{ 
+            marginBottom: '25px', 
+            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+            border: '2px solid #4CAF50',
+            textAlign: 'center',
+            padding: '30px'
+          }}>
+            <h3 style={{ color: '#4CAF50', marginBottom: '15px', fontSize: '22px' }}>
+              ✅ Завершение калькуляции
+            </h3>
+            <p style={{ 
+              color: 'rgba(255,255,255,0.8)', 
+              fontSize: '15px', 
+              marginBottom: '25px',
+              lineHeight: '1.6'
+            }}>
+              После сохранения калькуляции:
+              <br/>• Статус периода изменится на "Калькуляция проведена"
+              <br/>• Рекомендации будут сохранены в базе данных
+              <br/>• Сотрудник и руководитель получат уведомления
+            </p>
+            <button
+              onClick={saveCalculation}
+              disabled={loading}
+              style={{
+                padding: '16px 48px',
+                backgroundColor: loading ? '#666' : '#4CAF50',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '18px',
+                fontWeight: '700',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.3s',
+                boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)',
+                opacity: loading ? 0.7 : 1
+              }}
+              onMouseEnter={(e) => !loading && (e.target.style.transform = 'scale(1.05)')}
+              onMouseLeave={(e) => !loading && (e.target.style.transform = 'scale(1)')}
+            >
+              {loading ? 'Сохранение...' : 'Сохранить калькуляцию и отправить уведомления'}
+            </button>
+          </div>
+        )}
 
         {/* Блок "Подведение итогов" (старый блок, оставляем для общих заметок) */}
         <div className="section-card" style={{ marginBottom: '25px' }}>
