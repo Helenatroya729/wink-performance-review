@@ -15,7 +15,7 @@ const CalculationResults = ({ user, onLogout }) => {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeeId || '');
   const [periodId, setPeriodId] = useState(searchParams.get('periodId') || null);
-  const [periodStatus, setPeriodStatus] = useState(null); // Статус периода: awaiting_calculation или calculated
+  const [periodStatus, setPeriodStatus] = useState(null); // Статус периода: awaiting_calculation или completed
   
   // Два отдельных блока рекомендаций
   const [employeeRecommendations, setEmployeeRecommendations] = useState({
@@ -58,6 +58,7 @@ const CalculationResults = ({ user, onLogout }) => {
       
       // Загружаем результаты оценки для выбранного сотрудника
       const data = await api.get(`/employee/calculation-results/${empId}`);
+      console.log('📊 Загружены результаты калькуляции:', data);
       
       // Если есть periodId, загружаем статус периода
       if (periodId) {
@@ -67,6 +68,31 @@ const CalculationResults = ({ user, onLogout }) => {
           console.log('📋 Получен ответ от сервера:', periodData);
           setPeriodStatus(periodData.status);
           console.log('✅ Установлен periodStatus:', periodData.status);
+          
+          // Если статус completed, загружаем сохраненные рекомендации
+          if (periodData.status === 'completed') {
+            try {
+              console.log('🔍 Загружаем сохраненные рекомендации для periodId:', periodId);
+              const recommendations = await api.get(`/hr/recommendations/${periodId}`);
+              console.log('📦 Получены рекомендации из API:', recommendations);
+              
+              if (recommendations.employeeRecommendations) {
+                setEmployeeRecommendations({
+                  achievements: recommendations.employeeRecommendations.achievements || '',
+                  improvements: recommendations.employeeRecommendations.improvements || '',
+                  developmentPlan: recommendations.employeeRecommendations.developmentPlan || ''
+                });
+                console.log('✅ Установлены рекомендации для сотрудника');
+              }
+              if (recommendations.managerRecommendations) {
+                setManagerRecommendations(recommendations.managerRecommendations);
+                console.log('✅ Установлены рекомендации для руководителя');
+              }
+              console.log('✅ Загружены сохраненные рекомендации:', recommendations);
+            } catch (recError) {
+              console.error('❌ Ошибка загрузки рекомендаций:', recError);
+            }
+          }
         } catch (periodError) {
           console.error('⚠️ Ошибка при загрузке статуса периода:', periodError);
         }
@@ -90,6 +116,7 @@ const CalculationResults = ({ user, onLogout }) => {
       }
       
       setResults(data);
+      console.log('✅ Установлены results:', data);
       
       // Загружаем инструкции (если они есть)
       setCalculationInstructions(data.instructions || 'Итоговый балл рассчитывается как среднее арифметическое из всех полученных оценок: самооценки, оценки руководителя и оценок коллег.');
@@ -151,14 +178,18 @@ const CalculationResults = ({ user, onLogout }) => {
     }
   };
 
-  // Сохранение калькуляции (меняет статус на calculated и отправляет уведомления)
+  // Сохранение калькуляции (меняет статус на completed и отправляет уведомления)
   const saveCalculation = async () => {
-    // Проверяем, что обе рекомендации сгенерированы
-    const employeeRecText = `${employeeRecommendations.achievements}\n\n${employeeRecommendations.improvements}\n\n${employeeRecommendations.developmentPlan}`.trim();
-    const managerRecText = managerRecommendations.trim();
+    // Проверяем, что все три поля для сотрудника заполнены
+    if (!employeeRecommendations.achievements.trim() || 
+        !employeeRecommendations.improvements.trim() || 
+        !employeeRecommendations.developmentPlan.trim()) {
+      alert('Пожалуйста, заполните все три поля рекомендаций для сотрудника');
+      return;
+    }
     
-    if (!employeeRecText || !managerRecText) {
-      alert('Пожалуйста, сгенерируйте обе рекомендации (для сотрудника и для руководителя) перед сохранением калькуляции');
+    if (!managerRecommendations.trim()) {
+      alert('Пожалуйста, сгенерируйте рекомендации для руководителя');
       return;
     }
 
@@ -174,8 +205,13 @@ const CalculationResults = ({ user, onLogout }) => {
     try {
       setLoading(true);
       await api.post(`/hr/save-calculation/${periodId}`, {
-        employeeRecommendation: employeeRecText,
-        managerRecommendation: managerRecText
+        employeeRecommendation: {
+          achievements: employeeRecommendations.achievements,
+          improvements: employeeRecommendations.improvements,
+          developmentPlan: employeeRecommendations.developmentPlan
+        },
+        managerRecommendation: managerRecommendations,
+        finalize: true
       });
       
       alert('✅ Калькуляция успешно сохранена! Статус изменен на "Калькуляция проведена", уведомления отправлены.');
@@ -188,6 +224,100 @@ const CalculationResults = ({ user, onLogout }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Сохранить рекомендации без завершения калькуляции
+  const handleSaveRecommendations = async () => {
+    // Проверяем заполненность всех трех полей для сотрудника
+    if (!employeeRecommendations.achievements.trim() || 
+        !employeeRecommendations.improvements.trim() || 
+        !employeeRecommendations.developmentPlan.trim()) {
+      alert('Пожалуйста, заполните все три поля рекомендаций для сотрудника');
+      return;
+    }
+
+    if (!managerRecommendations.trim()) {
+      alert('Пожалуйста, заполните рекомендации для руководителя');
+      return;
+    }
+
+    if (!periodId) {
+      alert('Ошибка: не найден ID периода оценки');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await api.post(`/hr/save-calculation/${periodId}`, {
+        employeeRecommendation: {
+          achievements: employeeRecommendations.achievements,
+          improvements: employeeRecommendations.improvements,
+          developmentPlan: employeeRecommendations.developmentPlan
+        },
+        managerRecommendation: managerRecommendations,
+        finalize: false
+      });
+      
+      alert('✅ Рекомендации успешно сохранены!');
+    } catch (error) {
+      console.error('Ошибка сохранения рекомендаций:', error);
+      alert('Ошибка при сохранении: ' + (error.message || 'Неизвестная ошибка'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Завершить калькуляцию и отправить уведомления
+  const handleFinalizeCalculation = async () => {
+    // Проверяем заполненность всех трех полей для сотрудника
+    if (!employeeRecommendations.achievements.trim() || 
+        !employeeRecommendations.improvements.trim() || 
+        !employeeRecommendations.developmentPlan.trim()) {
+      alert('Пожалуйста, заполните все три поля рекомендаций для сотрудника');
+      return;
+    }
+
+    if (!managerRecommendations.trim()) {
+      alert('Пожалуйста, заполните рекомендации для руководителя');
+      return;
+    }
+
+    if (!periodId) {
+      alert('Ошибка: не найден ID периода оценки');
+      return;
+    }
+
+    if (!window.confirm('Вы уверены, что хотите ЗАВЕРШИТЬ калькуляцию? После этого статус изменится на "Калькуляция проведена" и сотрудник с руководителем получат уведомления.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await api.post(`/hr/save-calculation/${periodId}`, {
+        employeeRecommendation: {
+          achievements: employeeRecommendations.achievements,
+          improvements: employeeRecommendations.improvements,
+          developmentPlan: employeeRecommendations.developmentPlan
+        },
+        managerRecommendation: managerRecommendations,
+        finalize: true
+      });
+      
+      alert('✅ Калькуляция успешно завершена! Уведомления отправлены сотруднику и руководителю.');
+      
+      // Возвращаемся на HR Dashboard
+      navigate('/hr');
+    } catch (error) {
+      console.error('Ошибка завершения калькуляции:', error);
+      alert('Ошибка при завершении: ' + (error.message || 'Неизвестная ошибка'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Старая функция - оставляем для совместимости (теперь вызывает finalize)
+  const handleSaveCalculation = async () => {
+    await handleFinalizeCalculation();
   };
 
   // Генерация рекомендаций AI для сотрудника
@@ -214,38 +344,64 @@ const CalculationResults = ({ user, onLogout }) => {
       }
 
       // Подготавливаем детальные данные для отправки в AI микросервис
-      const aiRequestData = {
-        employee_name: results.employee.name,
-        position: results.employee.position || results.employee.role,
-        
-        // Баллы
-        self_score: results.scores.selfScore,
-        manager_score: results.scores.managerScore,
-        peer_score: results.scores.peerScore,
-        potential_score: results.scores.potentialScore || 0,
-        total_score: results.scores.totalScore,
-        evaluation_status: results.employee.evaluationStatus,
-        
-        // Детальная самооценка - все ответы и комментарии
-        self_assessment: results.details?.selfAssessment || [],
-        
-        // Оценка руководителя - комментарии и детали
-        manager_evaluation: results.details?.managerEvaluation ? {
-          performance_total: results.details.managerEvaluation.performance_total,
-          professional_qualities_score: results.details.managerEvaluation.professional_qualities_score,
-          personal_qualities_score: results.details.managerEvaluation.personal_qualities_score,
-          comments: results.details.managerEvaluation.comments,
-          manager_name: results.details.managerEvaluation.manager_name
-        } : null,
-        
-        // Все оценки коллег - комментарии от каждого
-        peer_reviews: results.details?.peerReviews || [],
-        
-        // Оценка потенциала (9-Box)
-        potential_assessment: results.details?.potentialAssessment || null,
+      // Приводим структуру запроса к схеме AI микросервиса (ResultsAndPlanRequest)
+      
+      // Преобразуем self_assessment - фильтруем null и приводим к нужной схеме
+      const selfAssessment = (results.details?.selfAssessment || []).map(item => ({
+        question_text: item.question_text || item.questionText || '',
+        answer_score: parseFloat(item.answer_score || item.answerScore || 0),
+        answer_text: item.answer_text || item.answerText || '',
+        task_name: item.task_name || item.taskName || null,
+        created_at: item.created_at || item.createdAt || new Date().toISOString()
+      })).filter(item => item.question_text && item.answer_text); // Убираем пустые
 
-        // Триггеры компании для учета в рекомендациях
-        company_triggers: companyTriggers
+      // Преобразуем peer_reviews
+      const peerReviews = (results.details?.peerReviews || []).map(item => ({
+        reviewer_name: item.reviewer_name || item.reviewerName || 'Коллега',
+        answer_score: parseFloat(item.answer_score || item.answerScore || 0),
+        answer_text: item.answer_text || item.answerText || '',
+        question_text: item.question_text || item.questionText || '',
+        task_name: item.task_name || item.taskName || null,
+        created_at: item.created_at || item.createdAt || new Date().toISOString()
+      })).filter(item => item.question_text && item.answer_text);
+
+      // Преобразуем potential_assessment - добавляем недостающие поля
+      let potentialAssessment = null;
+      if (results.details?.potentialAssessment) {
+        const pa = results.details.potentialAssessment;
+        potentialAssessment = {
+          potential_score: parseFloat(pa.potential_final_score || pa.potential_raw_score || pa.potential_score || 0),
+          performance_score: parseFloat(pa.performance_final_score || pa.performance_raw_score || pa.performance_score || 0),
+          box_position: pa.box_position || 'Средний результат / Средний потенциал',
+          readiness_timeframe: pa.successor_ready_timing || pa.readiness_timeframe || 'Через 1-2 года'
+        };
+      }
+
+      const aiRequestData = {
+        // Основная информация
+        employee_name: results.employeeName || '',
+        position: results.role || 'Сотрудник',
+
+        // Баллы
+        self_score: results.selfScore || 0,
+        manager_score: results.managerScore || 0,
+        peer_score: results.peerScore || 0,
+        total_score: results.totalScore || 0,
+        evaluation_status: results.status || 'in_progress',
+
+        // Детальные данные (очищенные и преобразованные)
+        self_assessment: selfAssessment,
+        peer_reviews: peerReviews,
+        potential_assessment: potentialAssessment,
+
+        // Оценка руководителя (может быть null)
+        manager_evaluation: results.details?.managerEvaluation ? {
+          performance_total: parseFloat(results.details.managerEvaluation.performance_total || 0),
+          professional_qualities_score: parseFloat(results.details.managerEvaluation.professional_qualities_score || 0),
+          personal_qualities_score: parseFloat(results.details.managerEvaluation.personal_qualities_score || 0),
+          comments: results.details.managerEvaluation.comments || '',
+          manager_name: results.details.managerEvaluation.manager_name || ''
+        } : null
       };
 
       console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис:', aiRequestData);
@@ -260,7 +416,9 @@ const CalculationResults = ({ user, onLogout }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`AI микросервис вернул ошибку: ${response.status}`);
+        const errorDetails = await response.text();
+        console.error('❌ Детали ошибки от AI (422):', errorDetails);
+        throw new Error(`AI микросервис вернул ошибку: ${response.status}. Детали: ${errorDetails}`);
       }
 
       const aiResponse = await response.json();
@@ -306,38 +464,59 @@ const CalculationResults = ({ user, onLogout }) => {
       }
 
       // Подготавливаем детальные данные для отправки в AI микросервис
-      const aiRequestData = {
-        employee_name: results.employee.name,
-        position: results.employee.position || results.employee.role,
-        
-        // Баллы
-        self_score: results.scores.selfScore,
-        manager_score: results.scores.managerScore,
-        peer_score: results.scores.peerScore,
-        potential_score: results.scores.potentialScore || 0,
-        total_score: results.scores.totalScore,
-        evaluation_status: results.employee.evaluationStatus,
-        
-        // Детальная самооценка - все ответы и комментарии
-        self_assessment: results.details?.selfAssessment || [],
-        
-        // Оценка руководителя - комментарии и детали
-        manager_evaluation: results.details?.managerEvaluation ? {
-          performance_total: results.details.managerEvaluation.performance_total,
-          professional_qualities_score: results.details.managerEvaluation.professional_qualities_score,
-          personal_qualities_score: results.details.managerEvaluation.personal_qualities_score,
-          comments: results.details.managerEvaluation.comments,
-          manager_name: results.details.managerEvaluation.manager_name
-        } : null,
-        
-        // Все оценки коллег - комментарии от каждого
-        peer_reviews: results.details?.peerReviews || [],
-        
-        // Оценка потенциала (9-Box)
-        potential_assessment: results.details?.potentialAssessment || null,
+      // Аналогично для генерации управленческих рекомендаций — по схеме StepsOfManagerRequest
+      
+      // Преобразуем данные аналогично первой функции
+      const selfAssessment = (results.details?.selfAssessment || []).map(item => ({
+        question_text: item.question_text || item.questionText || '',
+        answer_score: parseFloat(item.answer_score || item.answerScore || 0),
+        answer_text: item.answer_text || item.answerText || '',
+        task_name: item.task_name || item.taskName || null,
+        created_at: item.created_at || item.createdAt || new Date().toISOString()
+      })).filter(item => item.question_text && item.answer_text);
 
-        // Триггеры компании для учета в рекомендациях
-        company_triggers: companyTriggers
+      const peerReviews = (results.details?.peerReviews || []).map(item => ({
+        reviewer_name: item.reviewer_name || item.reviewerName || 'Коллега',
+        answer_score: parseFloat(item.answer_score || item.answerScore || 0),
+        answer_text: item.answer_text || item.answerText || '',
+        question_text: item.question_text || item.questionText || '',
+        task_name: item.task_name || item.taskName || null,
+        created_at: item.created_at || item.createdAt || new Date().toISOString()
+      })).filter(item => item.question_text && item.answer_text);
+
+      let potentialAssessment = null;
+      if (results.details?.potentialAssessment) {
+        const pa = results.details.potentialAssessment;
+        potentialAssessment = {
+          potential_score: parseFloat(pa.potential_final_score || pa.potential_raw_score || pa.potential_score || 0),
+          performance_score: parseFloat(pa.performance_final_score || pa.performance_raw_score || pa.performance_score || 0),
+          box_position: pa.box_position || 'Средний результат / Средний потенциал',
+          readiness_timeframe: pa.successor_ready_timing || pa.readiness_timeframe || 'Через 1-2 года'
+        };
+      }
+
+      const aiRequestData = {
+        employee_name: results.employeeName || '',
+        position: results.role || 'Сотрудник',
+
+        // Баллы
+        self_score: results.selfScore || 0,
+        manager_score: results.managerScore || 0,
+        peer_score: results.peerScore || 0,
+        total_score: results.totalScore || 0,
+        evaluation_status: results.status || 'in_progress',
+
+        // Детали (преобразованные)
+        self_assessment: selfAssessment,
+        peer_reviews: peerReviews,
+        potential_assessment: potentialAssessment,
+        manager_evaluation: results.details?.managerEvaluation ? {
+          performance_total: parseFloat(results.details.managerEvaluation.performance_total || 0),
+          professional_qualities_score: parseFloat(results.details.managerEvaluation.professional_qualities_score || 0),
+          personal_qualities_score: parseFloat(results.details.managerEvaluation.personal_qualities_score || 0),
+          comments: results.details.managerEvaluation.comments || '',
+          manager_name: results.details.managerEvaluation.manager_name || ''
+        } : null
       };
 
       console.log('📤 Отправка ПОЛНЫХ данных в AI микросервис для управленческих рекомендаций:', aiRequestData);
@@ -352,7 +531,9 @@ const CalculationResults = ({ user, onLogout }) => {
       });
 
       if (!response.ok) {
-        throw new Error(`AI микросервис вернул ошибку: ${response.status}`);
+        const errorDetails = await response.text();
+        console.error('❌ Детали ошибки от AI (422) для управленческих рекомендаций:', errorDetails);
+        throw new Error(`AI микросервис вернул ошибку: ${response.status}. Детали: ${errorDetails}`);
       }
 
       const aiResponse = await response.json();
@@ -664,7 +845,7 @@ const CalculationResults = ({ user, onLogout }) => {
               </button>
             )}
           </div>
-          {isReadOnly && (
+          {isReadOnly && employeeRecommendations.achievements && (
             <p style={{ 
               color: 'rgba(76, 175, 80, 0.8)', 
               fontSize: '14px', 
@@ -675,6 +856,19 @@ const CalculationResults = ({ user, onLogout }) => {
               border: '1px solid rgba(76, 175, 80, 0.3)'
             }}>
               ✅ Калькуляция завершена. Рекомендации сохранены и отправлены.
+            </p>
+          )}
+          {isReadOnly && !employeeRecommendations.achievements && (
+            <p style={{ 
+              color: 'rgba(255, 152, 0, 0.9)', 
+              fontSize: '14px', 
+              marginBottom: '20px',
+              padding: '12px',
+              backgroundColor: 'rgba(255, 152, 0, 0.15)',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 152, 0, 0.4)'
+            }}>
+              ⚠️ Рекомендации не были сохранены для этого периода. Статус нужно изменить на "Ожидает калькуляции", чтобы заполнить и сохранить рекомендации.
             </p>
           )}
           {!isReadOnly && (
@@ -859,6 +1053,32 @@ const CalculationResults = ({ user, onLogout }) => {
             </button>
             )}
           </div>
+          {isReadOnly && managerRecommendations && (
+            <p style={{ 
+              color: 'rgba(76, 175, 80, 0.8)', 
+              fontSize: '14px', 
+              marginBottom: '20px',
+              padding: '10px',
+              backgroundColor: 'rgba(76, 175, 80, 0.1)',
+              borderRadius: '6px',
+              border: '1px solid rgba(76, 175, 80, 0.3)'
+            }}>
+              ✅ Рекомендации для руководителя сохранены и отправлены.
+            </p>
+          )}
+          {isReadOnly && !managerRecommendations && (
+            <p style={{ 
+              color: 'rgba(255, 152, 0, 0.9)', 
+              fontSize: '14px', 
+              marginBottom: '20px',
+              padding: '12px',
+              backgroundColor: 'rgba(255, 152, 0, 0.15)',
+              borderRadius: '6px',
+              border: '1px solid rgba(255, 152, 0, 0.4)'
+            }}>
+              ⚠️ Рекомендации для руководителя не были сохранены. Статус нужно изменить на "Ожидает калькуляции", чтобы заполнить и сохранить.
+            </p>
+          )}
           {!isReadOnly && (
           <p style={{ 
             color: 'rgba(255,255,255,0.6)', 
@@ -923,50 +1143,77 @@ const CalculationResults = ({ user, onLogout }) => {
           )}
         </div>
 
-        {/* Большая зеленая кнопка "Сохранить калькуляцию" */}
+        {/* Кнопки сохранения и завершения калькуляции */}
         {canEdit && periodId && (
           <div className="section-card" style={{ 
             marginBottom: '25px', 
             backgroundColor: 'rgba(76, 175, 80, 0.1)',
             border: '2px solid #4CAF50',
-            textAlign: 'center',
             padding: '30px'
           }}>
-            <h3 style={{ color: '#4CAF50', marginBottom: '15px', fontSize: '22px' }}>
-              ✅ Завершение калькуляции
+            <h3 style={{ color: '#4CAF50', marginBottom: '15px', fontSize: '22px', textAlign: 'center' }}>
+              💾 Сохранение калькуляции
             </h3>
+            
+            <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', marginTop: '25px' }}>
+              {/* Кнопка "Сохранить" */}
+              <button
+                onClick={handleSaveRecommendations}
+                disabled={loading}
+                style={{
+                  padding: '16px 48px',
+                  backgroundColor: loading ? '#666' : '#2196F3',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '18px',
+                  fontWeight: '700',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 4px 12px rgba(33, 150, 243, 0.3)',
+                  opacity: loading ? 0.7 : 1
+                }}
+                onMouseEnter={(e) => !loading && (e.target.style.transform = 'scale(1.05)')}
+                onMouseLeave={(e) => !loading && (e.target.style.transform = 'scale(1)')}
+              >
+                {loading ? 'Сохранение...' : '💾 Сохранить'}
+              </button>
+
+              {/* Кнопка "Завершить калькуляцию" */}
+              <button
+                onClick={handleFinalizeCalculation}
+                disabled={loading}
+                style={{
+                  padding: '16px 48px',
+                  backgroundColor: loading ? '#666' : '#4CAF50',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '18px',
+                  fontWeight: '700',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)',
+                  opacity: loading ? 0.7 : 1
+                }}
+                onMouseEnter={(e) => !loading && (e.target.style.transform = 'scale(1.05)')}
+                onMouseLeave={(e) => !loading && (e.target.style.transform = 'scale(1)')}
+              >
+                {loading ? 'Завершение...' : '✅ Завершить калькуляцию'}
+              </button>
+            </div>
+
             <p style={{ 
-              color: 'rgba(255,255,255,0.8)', 
-              fontSize: '15px', 
-              marginBottom: '25px',
+              color: 'rgba(255,255,255,0.7)', 
+              fontSize: '14px', 
+              marginTop: '20px',
+              textAlign: 'center',
               lineHeight: '1.6'
             }}>
-              После сохранения калькуляции:
-              <br/>• Статус периода изменится на "Калькуляция проведена"
-              <br/>• Рекомендации будут сохранены в базе данных
-              <br/>• Сотрудник и руководитель получат уведомления
+              <strong>💾 Сохранить:</strong> сохраняет рекомендации без отправки уведомлений (можно продолжить редактирование)
+              <br/>
+              <strong>✅ Завершить:</strong> завершает калькуляцию и отправляет уведомления сотруднику и руководителю
             </p>
-            <button
-              onClick={saveCalculation}
-              disabled={loading}
-              style={{
-                padding: '16px 48px',
-                backgroundColor: loading ? '#666' : '#4CAF50',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '18px',
-                fontWeight: '700',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.3s',
-                boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)',
-                opacity: loading ? 0.7 : 1
-              }}
-              onMouseEnter={(e) => !loading && (e.target.style.transform = 'scale(1.05)')}
-              onMouseLeave={(e) => !loading && (e.target.style.transform = 'scale(1)')}
-            >
-              {loading ? 'Сохранение...' : 'Сохранить калькуляцию и отправить уведомления'}
-            </button>
           </div>
         )}
 

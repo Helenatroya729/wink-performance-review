@@ -1280,11 +1280,9 @@ app.post('/api/potential-assessment/submit', authenticateToken, async (req, res)
     else if (performance_raw_score >= 4) performance_final_score = 1;
     else performance_final_score = 0; // меньше 4 баллов = 0★
 
-    // Итоговая оценка потенциала: 1-7 = 1★, 8-12 = 2★, больше 12 невозможно (максимум 12 баллов)
-    let potential_final_score = 1;
-    if (potential_raw_score >= 8) potential_final_score = 2;
-    else if (potential_raw_score >= 1) potential_final_score = 1;
-    else potential_final_score = 0; // 0 баллов = 0★
+    // Итоговая оценка потенциала: сохраняем сырой балл (0-10) для использования в 9-бокс
+    // 9-бокс использует шкалу: >= 8 = high, >= 5 = medium, < 5 = low
+    const potential_final_score = potential_raw_score; // Сохраняем как есть (0-10)
 
     // Проверяем, существует ли уже оценка
     const existing = await query(`
@@ -1487,12 +1485,12 @@ app.get('/api/hr/analytics', authenticateToken, async (req, res) => {
       ? parseFloat(avgRatingResult.rows[0].avg_rating).toFixed(1) 
       : '0.0';
 
-    // Завершенных оценок (периоды со статусом completed или calculated в активном цикле)
+    // Завершенных оценок (периоды со статусом completed в активном цикле)
     const completedEvaluationsResult = await query(`
       SELECT COUNT(*) 
       FROM employee_review_periods 
       WHERE cycle_id = $1 
-      AND status IN ('completed', 'calculated')
+      AND status = 'completed'
     `, [activeCycleId]);
     const completedEvaluations = parseInt(completedEvaluationsResult.rows[0].count);
     
@@ -1558,7 +1556,28 @@ app.get('/api/hr/employee-scores', authenticateToken, async (req, res) => {
           erp.peer_reviews_completed,
           erp.potential_assessment_completed,
           erp.is_active,
-          ROW_NUMBER() OVER (PARTITION BY erp.user_id ORDER BY erp.is_active DESC, erp.id DESC) as rn
+          erp.created_at,
+          (CASE WHEN erp.self_assessment_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.manager_goals_evaluation_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.peer_reviews_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.potential_assessment_completed THEN 1 ELSE 0 END) as completed_count,
+          ROW_NUMBER() OVER (
+            PARTITION BY erp.user_id 
+            ORDER BY 
+              -- Приоритет: awaiting_calculation (с 4/4) > completed > awaiting_calculation (неполный) > остальные
+              CASE 
+                WHEN erp.status = 'awaiting_calculation' AND 
+                     (CASE WHEN erp.self_assessment_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.manager_goals_evaluation_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.peer_reviews_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.potential_assessment_completed THEN 1 ELSE 0 END) = 4 THEN 1
+                WHEN erp.status = 'completed' THEN 2
+                WHEN erp.status = 'awaiting_calculation' THEN 3
+                ELSE 4
+              END ASC,
+              erp.created_at DESC
+          ) as rn
+          
         FROM employee_review_periods erp
       )
       SELECT 
@@ -1580,11 +1599,11 @@ app.get('/api/hr/employee-scores', authenticateToken, async (req, res) => {
         -- Оценка менеджера: из manager_evaluations (уже 1-10)
         COALESCE((SELECT AVG(me.performance_total) FROM manager_evaluations me WHERE me.employee_id = u.id), 0) as manager_score,
         
-        -- Оценка коллег: среднее из peer_reviews (шкала 1-5, умножаем на 2 -> 1-10)
+        -- Оценка коллег: среднее из peer_reviews (шкала 1-5, умножаем на 2 -> 2-10)
         COALESCE((SELECT AVG(pr.answer_score) * 2 FROM peer_reviews pr WHERE pr.employee_id = u.id), 0) as peer_score,
         
-        -- Оценка потенциала: из potential_assessments (0-2 звезды, конвертируем * 5 -> 0, 5, 10)
-        COALESCE((SELECT AVG(pa.potential_final_score) * 5 FROM potential_assessments pa WHERE pa.employee_id = u.id), 0) as potential_score
+        -- Оценка потенциала: из potential_assessments (теперь хранит сырой балл 0-10, не звезды)
+        COALESCE((SELECT AVG(pa.potential_final_score) FROM potential_assessments pa WHERE pa.employee_id = u.id), 0) as potential_score
         
       FROM users u
       INNER JOIN latest_periods lp ON u.id = lp.user_id AND lp.rn = 1
@@ -1870,7 +1889,7 @@ app.get('/api/potential-assessment/employee/:employeeId', authenticateToken, asy
 // Получить мой рейтинг (для текущего пользователя)
 app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id; // Исправлено: было req.user.userId
+    const userId = req.user.id;
     
     console.log('🔍 Запрос рейтинга для пользователя ID:', userId);
 
@@ -1886,16 +1905,31 @@ app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
 
     const user = userResult.rows[0];
 
-    // Получаем оценку от менеджера
-    const managerEvalResult = await query(
-      `SELECT performance_total FROM manager_evaluations 
-       WHERE employee_id = $1 
-       ORDER BY created_at DESC 
-       LIMIT 1`,
-      [userId]
-    );
+    // Получаем ВСЕ оценки пользователя (такая же логика, как в /api/hr/employee-scores)
+    const scoresResult = await query(`
+      SELECT 
+        -- Самооценка: среднее из self_assessments (шкала 1-5, умножаем на 2 -> 2-10)
+        COALESCE((SELECT AVG(sa.answer_score) * 2 FROM self_assessments sa WHERE sa.user_id = $1), 0) as self_score,
+        
+        -- Оценка менеджера: из manager_evaluations (уже 1-10)
+        COALESCE((SELECT AVG(me.performance_total) FROM manager_evaluations me WHERE me.employee_id = $1), 0) as manager_score,
+        
+        -- Оценка коллег: среднее из peer_reviews (шкала 1-5, умножаем на 2 -> 2-10)
+        COALESCE((SELECT AVG(pr.answer_score) * 2 FROM peer_reviews pr WHERE pr.employee_id = $1), 0) as peer_score,
+        
+        -- Оценка потенциала: из potential_assessments (0-10, умножаем на 5 для шкалы -> 0-50, но нормализуем к 0-10)
+        COALESCE((SELECT pa.potential_final_score FROM potential_assessments pa WHERE pa.employee_id = $1 ORDER BY pa.created_at DESC LIMIT 1), 0) as potential_score
+    `, [userId]);
 
-    const totalScore = managerEvalResult.rows[0]?.performance_total || 0;
+    const scores = scoresResult.rows[0];
+    const selfScore = parseFloat(scores.self_score) || 0;
+    const managerScore = parseFloat(scores.manager_score) || 0;
+    const peerScore = parseFloat(scores.peer_score) || 0;
+    const potentialScore = parseFloat(scores.potential_score) || 0;
+
+    // Итоговый балл - среднее из ВСЕХ ненулевых оценок
+    const nonZeroScores = [selfScore, managerScore, peerScore, potentialScore].filter(s => s > 0);
+    const totalScore = nonZeroScores.length > 0 ? nonZeroScores.reduce((a, b) => a + b, 0) / nonZeroScores.length : 0;
 
     // Определяем категорию рейтинга
     let ratingLabel = 'Нет данных';
@@ -1910,11 +1944,14 @@ app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
     }
 
     // Получаем предыдущий рейтинг для расчета тренда (упрощенно)
-    // В реальности нужно брать из предыдущего периода оценки
     const previousScore = totalScore > 0 ? totalScore - 0.5 : 0;
     const trend = totalScore - previousScore;
 
     console.log('✅ Рейтинг рассчитан:', {
+      selfScore: selfScore.toFixed(1),
+      managerScore: managerScore.toFixed(1),
+      peerScore: peerScore.toFixed(1),
+      potentialScore: potentialScore.toFixed(1),
       totalScore: totalScore.toFixed(1),
       ratingLabel,
       trend: trend > 0 ? `+${trend.toFixed(1)}` : trend.toFixed(1)
@@ -1925,7 +1962,10 @@ app.get('/api/employee/my-rating', authenticateToken, async (req, res) => {
       label: ratingLabel,
       trend: parseFloat(trend.toFixed(1)),
       components: {
-        managerScore: parseFloat(totalScore.toFixed(1))
+        selfScore: parseFloat(selfScore.toFixed(1)),
+        managerScore: parseFloat(managerScore.toFixed(1)),
+        peerScore: parseFloat(peerScore.toFixed(1)),
+        potentialScore: parseFloat(potentialScore.toFixed(1))
       }
     });
 
@@ -2089,8 +2129,7 @@ app.get('/api/hr/employee/:id/details', authenticateToken, async (req, res) => {
     const statusMapping = {
       'not_started': 'Не начато',
       'in_progress': 'В процессе',
-      'completed': 'Завершено',
-      'calculated': 'Рассчитано'
+      'completed': 'Завершено'
     };
     const evaluationStatus = statusMapping[periodStatus] || 'Не начато';
 
@@ -2194,11 +2233,10 @@ app.get('/api/employee/calculation-results/:id', authenticateToken, async (req, 
       LIMIT 1
     `, [id]);
 
-    // Конвертируем звезды (0-2) в баллы (0, 5, 10)
+    // potential_final_score теперь хранит сырой балл (0-10), а не звезды (0-2)
     let potentialScore = 0;
     if (potentialResult.rows.length > 0 && potentialResult.rows[0].potential_final_score !== null) {
-      const stars = potentialResult.rows[0].potential_final_score;
-      potentialScore = stars * 5; // 0★→0, 1★→5, 2★→10
+      potentialScore = potentialResult.rows[0].potential_final_score; // Уже в шкале 0-10
     }
 
     // Расчет итогового балла
@@ -2283,22 +2321,60 @@ app.get('/api/hr/calculations', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Доступ запрещен' });
     }
 
+    // Используем ту же логику выбора периодов, что и в /api/hr/employee-scores
     const result = await query(`
+      WITH latest_periods AS (
+        SELECT 
+          erp.user_id,
+          erp.id as period_id,
+          erp.cycle_id,
+          erp.status,
+          erp.self_assessment_completed,
+          erp.manager_goals_evaluation_completed,
+          erp.peer_reviews_completed,
+          erp.potential_assessment_completed,
+          erp.is_active,
+          erp.created_at,
+          erp.name as period_name,
+          (CASE WHEN erp.self_assessment_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.manager_goals_evaluation_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.peer_reviews_completed THEN 1 ELSE 0 END +
+           CASE WHEN erp.potential_assessment_completed THEN 1 ELSE 0 END) as completed_count,
+          ROW_NUMBER() OVER (
+            PARTITION BY erp.user_id 
+            ORDER BY 
+              -- Приоритет: awaiting_calculation (с 4/4) > completed > awaiting_calculation (неполный) > остальные
+              CASE 
+                WHEN erp.status = 'awaiting_calculation' AND 
+                     (CASE WHEN erp.self_assessment_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.manager_goals_evaluation_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.peer_reviews_completed THEN 1 ELSE 0 END +
+                      CASE WHEN erp.potential_assessment_completed THEN 1 ELSE 0 END) = 4 THEN 1
+                WHEN erp.status = 'completed' THEN 2
+                WHEN erp.status = 'awaiting_calculation' THEN 3
+                ELSE 4
+              END ASC,
+              erp.created_at DESC
+          ) as rn
+
+        FROM employee_review_periods erp
+      )
       SELECT
-        erp.id as period_id,
-        erp.cycle_id,
-        erp.user_id as employee_id,
+        lp.period_id,
+        lp.cycle_id,
+        lp.user_id as employee_id,
         CONCAT(u.first_name, ' ', u.last_name) as employee_name,
         u.position,
-        erp.name as period_name,
-        erp.status,
-        erp.self_assessment_completed,
-        erp.peer_reviews_completed,
-        erp.manager_goals_evaluation_completed,
-        erp.potential_assessment_completed
-      FROM employee_review_periods erp
-      JOIN users u ON erp.user_id = u.id
-      ORDER BY erp.status DESC, u.last_name, u.first_name
+        lp.period_name,
+        lp.status,
+        lp.self_assessment_completed,
+        lp.peer_reviews_completed,
+        lp.manager_goals_evaluation_completed,
+        lp.potential_assessment_completed
+      FROM latest_periods lp
+      JOIN users u ON lp.user_id = u.id
+      WHERE lp.rn = 1 AND u.is_active = true AND u.role IN ('employee', 'manager')
+      ORDER BY lp.status DESC, u.last_name, u.first_name
     `);
 
     // Добавляем флаг can_calculate: только когда статус awaiting_calculation
@@ -2345,6 +2421,76 @@ app.post('/api/hr/calculate/:periodId', authenticateToken, async (req, res) => {
 });
 
 // Новый эндпоинт для сохранения калькуляции с рекомендациями
+// Загрузить сохраненные рекомендации для периода
+app.get('/api/hr/recommendations/:periodId', authenticateToken, async (req, res) => {
+  try {
+    const { periodId } = req.params;
+    console.log(`\n📥 Запрос рекомендаций для периода ${periodId}`);
+
+    // Получаем информацию о периоде
+    const period = await query(`SELECT id, user_id FROM employee_review_periods WHERE id = $1`, [periodId]);
+    if (period.rows.length === 0) {
+      console.log(`❌ Период ${periodId} не найден`);
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    const userId = period.rows[0].user_id;
+    console.log(`👤 User ID: ${userId}`);
+
+    // Загружаем рекомендации для сотрудника
+    const empRec = await query(`
+      SELECT achievements, improvements, development_plan 
+      FROM employee_recommendations 
+      WHERE employee_id = $1 AND period_id = $2
+      ORDER BY sent_at DESC
+      LIMIT 1
+    `, [userId, periodId]);
+
+    console.log(`📝 Employee recommendations: ${empRec.rows.length > 0 ? 'НАЙДЕНЫ' : 'НЕ НАЙДЕНЫ'}`);
+    if (empRec.rows.length > 0) {
+      console.log(`   Достижения: ${empRec.rows[0].achievements ? empRec.rows[0].achievements.substring(0, 50) + '...' : 'пусто'}`);
+      console.log(`   Улучшения: ${empRec.rows[0].improvements ? empRec.rows[0].improvements.substring(0, 50) + '...' : 'пусто'}`);
+      console.log(`   План: ${empRec.rows[0].development_plan ? empRec.rows[0].development_plan.substring(0, 50) + '...' : 'пусто'}`);
+    }
+
+    // Загружаем рекомендации для руководителя
+    // НЕ проверяем manager_id, т.к. он может меняться, а рекомендации привязаны к периоду
+    const mgrRec = await query(`
+      SELECT recommendations 
+      FROM manager_recommendations 
+      WHERE employee_id = $1 AND period_id = $2
+      ORDER BY sent_at DESC
+      LIMIT 1
+    `, [userId, periodId]);
+    
+    console.log(`👔 Manager recommendations: ${mgrRec.rows.length > 0 ? 'НАЙДЕНЫ' : 'НЕ НАЙДЕНЫ'}`);
+    if (mgrRec.rows.length > 0) {
+      console.log(`   ${mgrRec.rows[0].recommendations ? mgrRec.rows[0].recommendations.substring(0, 50) + '...' : 'пусто'}`);
+    }
+    
+    let managerRecommendations = null;
+    if (mgrRec.rows.length > 0) {
+      managerRecommendations = mgrRec.rows[0].recommendations;
+    }
+
+    const employeeRecommendations = empRec.rows.length > 0 ? {
+      achievements: empRec.rows[0].achievements || '',
+      improvements: empRec.rows[0].improvements || '',
+      developmentPlan: empRec.rows[0].development_plan || ''
+    } : null;
+
+    console.log(`\n✅ Отправка ответа: empRec=${employeeRecommendations ? 'есть' : 'null'}, mgrRec=${managerRecommendations ? 'есть' : 'null'}\n`);
+
+    res.json({
+      employeeRecommendations,
+      managerRecommendations
+    });
+  } catch (error) {
+    console.error('❌ Ошибка загрузки рекомендаций:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 app.post('/api/hr/save-calculation/:periodId', authenticateToken, async (req, res) => {
   try {
     if (req.user.role !== 'hr' && req.user.role !== 'admin') {
@@ -2352,10 +2498,16 @@ app.post('/api/hr/save-calculation/:periodId', authenticateToken, async (req, re
     }
 
     const { periodId } = req.params;
-    const { employeeRecommendation, managerRecommendation } = req.body;
+    const { employeeRecommendation, managerRecommendation, finalize } = req.body;
+
+    console.log(`\n💾 Сохранение калькуляции для периода ${periodId}`);
+    console.log(`   Finalize: ${finalize}`);
+    console.log(`   employeeRecommendation тип: ${typeof employeeRecommendation}`);
+    console.log(`   managerRecommendation тип: ${typeof managerRecommendation}`);
 
     // Проверяем, что рекомендации заполнены
     if (!employeeRecommendation || !managerRecommendation) {
+      console.log(`❌ Ошибка: рекомендации не заполнены`);
       return res.status(400).json({ error: 'Необходимо сгенерировать обе рекомендации перед сохранением' });
     }
 
@@ -2363,120 +2515,169 @@ app.post('/api/hr/save-calculation/:periodId', authenticateToken, async (req, re
     if (period.rows.length === 0) return res.status(404).json({ error: 'Период не найден' });
 
     const p = period.rows[0];
-    if (p.status !== 'awaiting_calculation') {
-      return res.status(400).json({ error: 'Калькуляция может быть сохранена только для периодов в статусе awaiting_calculation' });
+    console.log(`👤 User ID: ${p.user_id}, Status: ${p.status}`);
+    
+    if (p.status !== 'awaiting_calculation' && p.status !== 'completed') {
+      return res.status(400).json({ error: 'Калькуляция может быть сохранена только для периодов в статусе awaiting_calculation или completed' });
     }
 
-    // Проверяем, существуют ли уже рекомендации для этого периода
-    const existingRecs = await query(`
-      SELECT id FROM employee_recommendations WHERE period_id = $1
-    `, [periodId]);
-
-    if (existingRecs.rows.length > 0) {
-      // Обновляем существующие рекомендации
+    // Сохраняем рекомендации для сотрудника в employee_recommendations
+    // Рекомендации приходят как объект с тремя полями
+    const { achievements, improvements, developmentPlan } = employeeRecommendation;
+    
+    console.log(`📝 Рекомендации для сотрудника:`);
+    console.log(`   achievements: ${achievements ? achievements.substring(0, 50) + '...' : 'ПУСТО!'}`);
+    console.log(`   improvements: ${improvements ? improvements.substring(0, 50) + '...' : 'ПУСТО!'}`);
+    console.log(`   developmentPlan: ${developmentPlan ? developmentPlan.substring(0, 50) + '...' : 'ПУСТО!'}`);
+    
+    const existingEmpRec = await query(`SELECT id FROM employee_recommendations WHERE employee_id = $1 AND period_id = $2`, [p.user_id, periodId]);
+    
+    if (existingEmpRec.rows.length > 0) {
+      // Обновляем существующую запись
+      console.log(`🔄 Обновление существующей записи employee_recommendations`);
       await query(`
         UPDATE employee_recommendations 
-        SET recommendation_text = $1, updated_at = NOW()
-        WHERE period_id = $2
-      `, [employeeRecommendation, periodId]);
+        SET achievements = $1, improvements = $2, development_plan = $3
+        WHERE employee_id = $4 AND period_id = $5
+      `, [achievements, improvements, developmentPlan, p.user_id, periodId]);
     } else {
-      // Создаем новую запись рекомендации для сотрудника
+      // Создаём новую запись
+      console.log(`➕ Создание новой записи employee_recommendations`);
       await query(`
-        INSERT INTO employee_recommendations (period_id, employee_id, recommendation_text, created_at, updated_at)
-        VALUES ($1, $2, $3, NOW(), NOW())
-      `, [periodId, p.user_id, employeeRecommendation]);
+        INSERT INTO employee_recommendations (period_id, employee_id, achievements, improvements, development_plan)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [periodId, p.user_id, achievements, improvements, developmentPlan]);
     }
 
-    // Проверяем таблицу manager_recommendations
-    const existingManagerRecs = await query(`
-      SELECT id FROM manager_recommendations WHERE period_id = $1
-    `, [periodId]);
+    // Сохраняем рекомендации для руководителя в manager_recommendations
+    const managerRes = await query('SELECT manager_id FROM users WHERE id = $1', [p.user_id]);
+    const managerId = managerRes.rows.length > 0 && managerRes.rows[0].manager_id 
+      ? managerRes.rows[0].manager_id 
+      : null;
 
-    if (existingManagerRecs.rows.length > 0) {
-      // Обновляем существующие рекомендации
-      await query(`
-        UPDATE manager_recommendations 
-        SET recommendation_text = $1, updated_at = NOW()
-        WHERE period_id = $2
-      `, [managerRecommendation, periodId]);
-    } else {
-      // Получаем менеджера сотрудника
-      const managerRes = await query('SELECT manager_id FROM users WHERE id = $1', [p.user_id]);
-      const managerId = managerRes.rows.length > 0 && managerRes.rows[0].manager_id 
-        ? managerRes.rows[0].manager_id 
-        : null;
-
-      if (managerId) {
-        // Создаем новую запись рекомендации для менеджера
+    if (managerId) {
+      const existingMgrRec = await query(`SELECT id FROM manager_recommendations WHERE employee_id = $1 AND manager_id = $2 AND period_id = $3`, [p.user_id, managerId, periodId]);
+      
+      if (existingMgrRec.rows.length > 0) {
+        // Обновляем существующую запись
         await query(`
-          INSERT INTO manager_recommendations (period_id, employee_id, manager_id, recommendation_text, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, NOW(), NOW())
+          UPDATE manager_recommendations 
+          SET recommendations = $1
+          WHERE employee_id = $2 AND manager_id = $3 AND period_id = $4
+        `, [managerRecommendation, p.user_id, managerId, periodId]);
+      } else {
+        // Создаём новую запись
+        await query(`
+          INSERT INTO manager_recommendations (period_id, employee_id, manager_id, recommendations)
+          VALUES ($1, $2, $3, $4)
         `, [periodId, p.user_id, managerId, managerRecommendation]);
       }
     }
 
-    // Меняем статус периода на 'calculated'
-    await query(`
-      UPDATE employee_review_periods
-      SET status = 'calculated', calculated_at = NOW()
-      WHERE id = $1
-    `, [periodId]);
+    // Если finalize === true, завершаем калькуляцию
+    if (finalize) {
+      // Меняем статус периода на 'completed' (калькуляция завершена)
+      await query(`
+        UPDATE employee_review_periods
+        SET status = 'completed', calculated_at = NOW()
+        WHERE id = $1
+      `, [periodId]);
 
-    // Создаем следующий период для сотрудника (для постановки целей)
-    const currentPeriod = await query(`SELECT start_date, end_date, name FROM employee_review_periods WHERE id = $1`, [periodId]);
-    const currentEndDate = new Date(currentPeriod.rows[0].end_date);
-    const nextStartDate = new Date(currentEndDate);
-    nextStartDate.setDate(nextStartDate.getDate() + 1);
-    const nextEndDate = new Date(nextStartDate);
-    nextEndDate.setMonth(nextEndDate.getMonth() + 6); // Следующий период на 6 месяцев
+      // Обновляем sent_at в рекомендациях (отправка происходит только при завершении)
+      await query(`
+        UPDATE employee_recommendations 
+        SET sent_at = NOW()
+        WHERE employee_id = $1 AND period_id = $2
+      `, [p.user_id, periodId]);
 
-    const nextPeriodName = `Performance Review ${nextStartDate.getFullYear()} - ${nextStartDate.toLocaleString('ru-RU', { month: 'long' })}`;
+      if (managerId) {
+        await query(`
+          UPDATE manager_recommendations 
+          SET sent_at = NOW()
+          WHERE employee_id = $1 AND manager_id = $2 AND period_id = $3
+        `, [p.user_id, managerId, periodId]);
+      }
 
-    const nextPeriod = await query(`
-      INSERT INTO employee_review_periods (user_id, cycle_id, name, start_date, end_date, status, is_active, created_at)
-      VALUES ($1, $2, $3, $4, $5, 'not_started', true, NOW())
-      RETURNING id
-    `, [p.user_id, p.cycle_id, nextPeriodName, nextStartDate, nextEndDate]);
+      // Удаляем уведомление для HR о необходимости расчёта (оно больше не актуально)
+      console.log(`🗑️ Удаление уведомлений для HR по периоду ${periodId}`);
+      await query(`
+        DELETE FROM notifications 
+        WHERE type = 'hr_approval_request' 
+        AND related_user_id = $1
+      `, [p.user_id]);
+      console.log(`✅ Уведомления удалены`);
 
-    const nextPeriodId = nextPeriod.rows[0].id;
+      // Деактивируем все старые периоды этого сотрудника
+      await query(`
+        UPDATE employee_review_periods
+        SET is_active = false
+        WHERE user_id = $1 AND id != $2
+      `, [p.user_id, periodId]);
 
-    // Создаем уведомление сотруднику о завершении калькуляции и необходимости установить цели
-    await query(`
-      INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
-    `, [
-      p.user_id,
-      'calculation_completed',
-      'Калькуляция завершена',
-      `Ваша оценка была рассчитана и рекомендации готовы. Теперь установите цели на следующий период (ID: ${nextPeriodId}).`,
-      req.user.id,
-      periodId
-    ]);
+      // Создаем следующий период для сотрудника (для постановки целей)
+      const currentPeriod = await query(`SELECT start_date, end_date, name FROM employee_review_periods WHERE id = $1`, [periodId]);
+      const currentEndDate = new Date(currentPeriod.rows[0].end_date);
+      const nextStartDate = new Date(currentEndDate);
+      nextStartDate.setDate(nextStartDate.getDate() + 1);
+      const nextEndDate = new Date(nextStartDate);
+      nextEndDate.setMonth(nextEndDate.getMonth() + 6); // Следующий период на 6 месяцев
 
-    // Создаем уведомление менеджеру (если есть)
-    const managerRes = await query('SELECT manager_id FROM users WHERE id = $1', [p.user_id]);
-    if (managerRes.rows.length > 0 && managerRes.rows[0].manager_id) {
+      const nextPeriodName = `Performance Review ${nextStartDate.getFullYear()} - ${nextStartDate.toLocaleString('ru-RU', { month: 'long' })}`;
+
+      const nextPeriod = await query(`
+        INSERT INTO employee_review_periods (user_id, cycle_id, name, start_date, end_date, status, is_active, created_at)
+        VALUES ($1, $2, $3, $4, $5, 'not_started', true, NOW())
+        RETURNING id
+      `, [p.user_id, p.cycle_id, nextPeriodName, nextStartDate, nextEndDate]);
+
+      const nextPeriodId = nextPeriod.rows[0].id;
+
+      // Создаем уведомление сотруднику о завершении калькуляции и необходимости установить цели
       await query(`
         INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
       `, [
-        managerRes.rows[0].manager_id,
+        p.user_id,
         'calculation_completed',
-        'Калькуляция завершена для сотрудника',
-        `Калькуляция и рекомендации готовы для вашего сотрудника (periodId: ${periodId}).`,
+        'Калькуляция завершена',
+        `Ваша оценка была рассчитана и рекомендации готовы. Теперь установите цели на следующий период (ID: ${nextPeriodId}).`,
         req.user.id,
         periodId
       ]);
-    }
 
-    res.json({ 
-      message: 'Калькуляция успешно сохранена',
-      periodId: periodId,
-      status: 'calculated'
-    });
+      // Создаем уведомление менеджеру (если есть)
+      if (managerId) {
+        await query(`
+          INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+        `, [
+          managerId,
+          'calculation_completed',
+          'Калькуляция завершена для сотрудника',
+          `Калькуляция и рекомендации готовы для вашего сотрудника (periodId: ${periodId}).`,
+          req.user.id,
+          periodId
+        ]);
+      }
+
+      res.json({ 
+        message: 'Калькуляция успешно завершена и отправлена',
+        periodId: periodId,
+        nextPeriodId: nextPeriodId,
+        status: 'completed'
+      });
+    } else {
+      // Просто сохраняем без завершения
+      res.json({ 
+        message: 'Рекомендации успешно сохранены',
+        periodId: periodId,
+        status: p.status
+      });
+    }
   } catch (error) {
-    console.error('Ошибка при сохранении калькуляции:', error);
-    res.status(500).json({ error: 'Ошибка сервера' });
+    console.error('❌ ДЕТАЛЬНАЯ ошибка при сохранении калькуляции:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ error: 'Ошибка сервера: ' + error.message });
   }
 });
 
@@ -2574,7 +2775,7 @@ app.post('/api/employee/complete-pr/:periodId', authenticateToken, async (req, r
   try {
     const { periodId } = req.params;
 
-    // Проверяем, что период принадлежит пользователю и находится в статусе 'calculated'
+    // Проверяем, что период принадлежит пользователю и находится в статусе 'completed'
     const period = await query(`
       SELECT id, user_id, status FROM employee_review_periods WHERE id = $1
     `, [periodId]);
@@ -2588,8 +2789,8 @@ app.post('/api/employee/complete-pr/:periodId', authenticateToken, async (req, r
       return res.status(403).json({ error: 'Доступ запрещен' });
     }
 
-    if (p.status !== 'calculated') {
-      return res.status(400).json({ error: 'Период должен быть в статусе calculated' });
+    if (p.status !== 'completed') {
+      return res.status(400).json({ error: 'Период должен быть в статусе completed' });
     }
 
     // Проверяем, что для СЛЕДУЮЩЕГО периода установлены цели
@@ -4503,12 +4704,13 @@ app.get('/api/review-periods/my', authenticateToken, async (req, res) => {
          WHERE requester_id = erp.user_id AND period_id = erp.id AND status = 'completed') as peer_reviews_count
       FROM employee_review_periods erp
       WHERE erp.user_id = $1
-        AND (erp.status IN ('not_started', 'in_progress', 'pending_manager_approval', 'pending_hr_approval', 'awaiting_calculation', 'calculated') 
+        AND (erp.status IN ('not_started', 'in_progress', 'pending_manager_approval', 'pending_hr_approval', 'awaiting_calculation') 
              OR erp.status = 'completed')
       ORDER BY 
+        erp.is_active DESC,
         CASE 
-          WHEN erp.status IN ('not_started', 'in_progress', 'pending_manager_approval', 'pending_hr_approval', 'awaiting_calculation') THEN 0
-          WHEN erp.status = 'calculated' THEN 1
+          WHEN erp.status IN ('not_started', 'in_progress') THEN 0
+          WHEN erp.status IN ('pending_manager_approval', 'pending_hr_approval', 'awaiting_calculation') THEN 1
           ELSE 2
         END,
         erp.start_date DESC

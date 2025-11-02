@@ -88,32 +88,10 @@ const PotentialAssessment = ({ user, onLogout }) => {
 
       const response = await api.potentialAssessment.submit(assessmentData);
       
-      alert(`Оценка потенциала успешно сохранена!\n\nРезультативность: ${response.performance_raw_score} баллов (оценка: ${response.performance_final_score}★)\nПотенциал: ${response.potential_raw_score} баллов (оценка: ${response.potential_final_score}★)`);
+      alert(`Оценка потенциала успешно сохранена и отправлена!\n\nРезультативность: ${response.performance_raw_score} баллов (оценка: ${response.performance_final_score}★)\nПотенциал: ${response.potential_raw_score} баллов (оценка: ${response.potential_final_score}★)\n\nСтатус сотрудника обновлен на: Ожидает калькуляции`);
       
-      // Сброс формы и обновление списка
-      setFormData({
-        prof_responsibility: false,
-        prof_result_oriented: false,
-        prof_proactivity: false,
-        prof_open_mindset: false,
-        prof_team_player: false,
-        professional_comment: '',
-        pers_took_responsibility: false,
-        pers_transparent_communication: false,
-        pers_shared_info: false,
-        pers_organized_work: false,
-        personal_comment: '',
-        had_motivation_one_on_one: false,
-        knows_miscommunication_cases: false,
-        development_desire: 'proactive',
-        is_successor: false,
-        successor_ready_timing: '1-2_years',
-        turnover_risk: 5,
-        ole_priority_1: '',
-        ole_priority_2: ''
-      });
-      setSelectedEmployee(null);
-      loadReadyEmployees(); // Обновляем список
+      // Перенаправляем на главную страницу
+      navigate('/manager');
       
     } catch (error) {
       console.error('Ошибка при сохранении оценки:', error);
@@ -904,7 +882,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                   opacity: (loading || !selectedEmployee) ? 0.5 : 1
                 }}
               >
-                {loading ? 'Сохранение...' : 'Сохранить оценку'}
+                {loading ? 'Отправка...' : 'Сохранить и отправить'}
               </button>
             </div>
           </form>

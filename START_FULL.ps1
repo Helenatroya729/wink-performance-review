@@ -22,13 +22,19 @@ try {
 }
 
 Write-Host ""
-Write-Host "[2/3] Starting Backend Server..." -ForegroundColor Yellow
+Write-Host "[2/4] Starting AI Service..." -ForegroundColor Yellow
+Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$PWD\aiassistant'; .\venv\Scripts\Activate.ps1; python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+Start-Sleep -Seconds 3
+Write-Host "✅ AI Service started on http://localhost:8000" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "[3/4] Starting Backend Server..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$PWD\server'; node server-new.js"
 Start-Sleep -Seconds 3
 Write-Host "✅ Backend started on http://localhost:5000" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "[3/3] Starting Frontend..." -ForegroundColor Yellow
+Write-Host "[4/4] Starting Frontend..." -ForegroundColor Yellow
 Start-Process -FilePath "powershell" -ArgumentList "-NoExit", "-Command", "cd '$PWD\client'; npm start"
 Write-Host "✅ Frontend starting on http://localhost:3000" -ForegroundColor Green
 
@@ -37,10 +43,13 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "All services started!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "📊 Backend:  http://localhost:5000" -ForegroundColor White
-Write-Host "🌐 Frontend: http://localhost:3000" -ForegroundColor White
+Write-Host "[AI]  AI Service: http://localhost:8000" -ForegroundColor White
+Write-Host "[BE]  Backend:    http://localhost:5000" -ForegroundColor White
+Write-Host "[FE]  Frontend:   http://localhost:3000" -ForegroundColor White
 Write-Host ""
-Write-Host "🔑 Test credentials (password: 123456):" -ForegroundColor Yellow
+Write-Host "[DOC] AI API Docs: http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "Test credentials (password: 123456):" -ForegroundColor Yellow
 Write-Host "   - admin@wink.ru (Administrator)" -ForegroundColor Gray
 Write-Host "   - hr@wink.ru (HR Manager)" -ForegroundColor Gray
 Write-Host "   - manager1@wink.ru (Team Lead)" -ForegroundColor Gray

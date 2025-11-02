@@ -124,7 +124,9 @@ const HRDashboard = ({ user, onLogout }) => {
         // Используем can_calculate из employee-scores, если есть, иначе из periodMap
         can_calculate: es.can_calculate !== undefined ? es.can_calculate : ((periodMap[es.id] && periodMap[es.id].can_calculate) || false),
         period_id: es.period_id || (periodMap[es.id] ? periodMap[es.id].period_id : null),
-        period_status: es.reviewStatus || (periodMap[es.id] ? periodMap[es.id].status : null)
+        period_status: es.reviewStatus || (periodMap[es.id] ? periodMap[es.id].status : null),
+        // Используем статус из periodMap если есть, иначе оставляем оригинальный
+        reviewStatus: (periodMap[es.id] && periodMap[es.id].status) || es.reviewStatus || 'not_started'
       }));
 
       console.log('📊 Merged employee data:');
@@ -975,7 +977,7 @@ const HRDashboard = ({ user, onLogout }) => {
                               }}
                               title={emp.reviewStatus === 'not_started' 
                                 ? 'Калькуляция будет доступна после начала оценки' 
-                                : 'Провести калькуляцию результатов'
+                                : (emp.reviewStatus === 'completed' ? 'Просмотр калькуляции' : 'Провести калькуляцию результатов')
                               }
                             >
                               {emp.reviewStatus === 'awaiting_calculation' 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
@@ -14,15 +14,15 @@ const PotentialAssessment = ({ user, onLogout }) => {
   
   // Форма оценки
   const [formData, setFormData] = useState({
-    professional_qualities_score: 3,
+    professional_qualities_score: ,
     professional_qualities_comment: '',
-    personal_qualities_score: 2,
+    personal_qualities_score: ,
     personal_qualities_comment: '',
     took_more_responsibility: false,
     communicated_transparently: false,
     shared_knowledge: false,
     completed_task: false,
-    ready_for_development: '1-2_years',
+    ready_for_development: '-_years',
     is_successor: false,
     turnover_risk: 5
   });
@@ -78,15 +78,15 @@ const PotentialAssessment = ({ user, onLogout }) => {
       
       // Сброс формы
       setFormData({
-        professional_qualities_score: 3,
+        professional_qualities_score: ,
         professional_qualities_comment: '',
-        personal_qualities_score: 2,
+        personal_qualities_score: ,
         personal_qualities_comment: '',
         took_more_responsibility: false,
         communicated_transparently: false,
         shared_knowledge: false,
         completed_task: false,
-        ready_for_development: '1-2_years',
+        ready_for_development: '-_years',
         is_successor: false,
         turnover_risk: 5
       });
@@ -108,16 +108,16 @@ const PotentialAssessment = ({ user, onLogout }) => {
 
   const calculatePotentialTotal = () => {
     let total = 0;
-    if (formData.took_more_responsibility) total += 1;
-    if (formData.communicated_transparently) total += 1;
-    if (formData.shared_knowledge) total += 1;
-    if (formData.completed_task) total += 1;
-    if (formData.is_successor) total += 1;
+    if (formData.took_more_responsibility) total += ;
+    if (formData.communicated_transparently) total += ;
+    if (formData.shared_knowledge) total += ;
+    if (formData.completed_task) total += ;
+    if (formData.is_successor) total += ;
     
     // Готовность к развитию
-    if (formData.ready_for_development === '1-2_years') total += 2;
-    else if (formData.ready_for_development === '3_years') total += 1;
-    // '3_plus_years' = 0
+    if (formData.ready_for_development === '-_years') total += ;
+    else if (formData.ready_for_development === '_years') total += ;
+    // '_plus_years' = 0
     
     return total;
   };
@@ -130,16 +130,16 @@ const PotentialAssessment = ({ user, onLogout }) => {
       
       <div className="dashboard-content">
         <div className="welcome-section">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
             <button 
               onClick={() => navigate('/manager')} 
               className="btn-back"
-              style={{ padding: '8px 16px', fontSize: '14px' }}
+              style={{ padding: '8px 6px', fontSize: '4px' }}
             >
               ← Назад
             </button>
             <div>
-              <h1>Оценка потенциала сотрудника</h1>
+              <h>Оценка потенциала сотрудника</h>
               <p>Детальная оценка по профессиональным и личным качествам, потенциалу и результативности</p>
             </div>
           </div>
@@ -148,33 +148,33 @@ const PotentialAssessment = ({ user, onLogout }) => {
         <div className="section-card">
           {/* Преамбула */}
           <div style={{ 
-            background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.1) 0%, rgba(247, 147, 30, 0.1) 100%)',
-            border: '1px solid var(--wink-orange)',
+            background: 'linear-gradient(5deg, rgba(55, 07, 5, 0.) 0%, rgba(47, 47, 0, 0.) 00%)',
+            border: 'px solid var(--wink-orange)',
             borderRadius: '8px',
-            padding: '20px',
-            marginBottom: '24px'
+            padding: '0px',
+            marginBottom: '4px'
           }}>
-            <h3 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>Инструкция по заполнению</h3>
-            <p style={{ margin: '12px 0', lineHeight: '1.6' }}>
+            <h style={{ color: 'var(--wink-orange)', marginTop: 0 }}>Инструкция по заполнению</h>
+            <p style={{ margin: 'px 0', lineHeight: '.6' }}>
               Данный раздел необходим для общей оценки потенциала сотрудника.
               <br/>Две шкалы потенциал-результативность.
             </p>
-            <p style={{ margin: '12px 0', fontWeight: '600' }}>Он складывается из следующих зон:</p>
-            <ul style={{ margin: '12px 0 0 20px', lineHeight: '1.8' }}>
-              <li><strong>1. Результативность</strong>
+            <p style={{ margin: 'px 0', fontWeight: '600' }}>Он складывается из следующих зон:</p>
+            <ul style={{ margin: 'px 0 0 0px', lineHeight: '.8' }}>
+              <li><strong>. Результативность</strong>
                 <ul style={{ marginTop: '8px' }}>
-                  <li>1. Профессиональные качества</li>
-                  <li>2. Личные качества</li>
+                  <li>. Профессиональные качества</li>
+                  <li>. Личные качества</li>
                 </ul>
               </li>
-              <li style={{ marginTop: '12px' }}><strong>2. Потенциал</strong></li>
-              <li style={{ marginTop: '8px' }}><strong>3. Стремление развиваться и расти</strong></li>
+              <li style={{ marginTop: 'px' }}><strong>. Потенциал</strong></li>
+              <li style={{ marginTop: '8px' }}><strong>. Стремление развиваться и расти</strong></li>
             </ul>
           </div>
 
           <form onSubmit={handleSubmit}>
             {/* Выбор сотрудника и цикла */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '32px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'fr fr', gap: '0px', marginBottom: 'px' }}>
               <div className="form-group">
                 <label>Сотрудник *</label>
                 <select
@@ -210,11 +210,11 @@ const PotentialAssessment = ({ user, onLogout }) => {
 
             {selectedEmployeeData && (
               <div style={{
-                background: '#2a2a2a',
+                background: '#aaa',
                 borderRadius: '8px',
-                padding: '16px',
-                marginBottom: '32px',
-                border: '1px solid #404040'
+                padding: '6px',
+                marginBottom: 'px',
+                border: 'px solid #404040'
               }}>
                 <strong style={{ color: 'var(--wink-orange)' }}>Оценка для:</strong> {selectedEmployeeData.first_name} {selectedEmployeeData.last_name}
                 <br/>
@@ -222,34 +222,34 @@ const PotentialAssessment = ({ user, onLogout }) => {
               </div>
             )}
 
-            {/* Раздел 1: Результативность */}
+            {/* Раздел : Результативность */}
             <div style={{
-              background: 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
-              borderRadius: '12px',
-              padding: '24px',
-              marginBottom: '24px',
-              border: '1px solid #404040'
+              background: 'linear-gradient(5deg, #aaa 0%, #fff 00%)',
+              borderRadius: 'px',
+              padding: '4px',
+              marginBottom: '4px',
+              border: 'px solid #404040'
             }}>
-              <h2 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>1. Результативность</h2>
+              <h style={{ color: 'var(--wink-orange)', marginTop: 0 }}>. Результативность</h>
               
               {/* Профессиональные качества */}
               <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600' }}>
-                  1.1. Какие профессиональные качества проявил сотрудник за последний период работы *
+                <label style={{ fontSize: '6px', fontWeight: '600' }}>
+                  .. Какие профессиональные качества проявил сотрудник за последний период работы *
                 </label>
-                <p style={{ color: '#999', fontSize: '14px', margin: '8px 0' }}>
-                  Выпадающий список (1-5 баллов, вес = 1):
+                <p style={{ color: '#999', fontSize: '4px', margin: '8px 0' }}>
+                  Выпадающий список (-5 баллов, вес = ):
                 </p>
-                <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '00px fr', gap: 'px', alignItems: 'start' }}>
                   <select
                     value={formData.professional_qualities_score}
                     onChange={(e) => setFormData({...formData, professional_qualities_score: parseInt(e.target.value)})}
                     required
-                    style={{ padding: '12px' }}
+                    style={{ padding: 'px' }}
                   >
-                    <option value={1}>1 - Ответственность</option>
-                    <option value={2}>2 - Ориентация на результат</option>
-                    <option value={3}>3 - Проактивность (исследовал решение глубже, чем ожидалось)</option>
+                    <option value={}> - Ответственность</option>
+                    <option value={}> - Ориентация на результат</option>
+                    <option value={}> - Проактивность (исследовал решение глубже, чем ожидалось)</option>
                     <option value={4}>4 - Открытое мышление (нестандартное мышление) - тестировал новые подходы</option>
                     <option value={5}>5 - Командный игрок (объединял команду, вел за собой)</option>
                   </select>
@@ -257,109 +257,109 @@ const PotentialAssessment = ({ user, onLogout }) => {
                     value={formData.professional_qualities_comment}
                     onChange={(e) => setFormData({...formData, professional_qualities_comment: e.target.value})}
                     placeholder="Комментарий (необязательно)"
-                    rows={3}
+                    rows={}
                   />
                 </div>
               </div>
 
               {/* Личные качества */}
-              <div className="form-group" style={{ marginTop: '24px' }}>
-                <label style={{ fontSize: '16px', fontWeight: '600' }}>
-                  1.2. Какие личные качества проявил сотрудник за последний период работы *
+              <div className="form-group" style={{ marginTop: '4px' }}>
+                <label style={{ fontSize: '6px', fontWeight: '600' }}>
+                  .. Какие личные качества проявил сотрудник за последний период работы *
                 </label>
-                <p style={{ color: '#999', fontSize: '14px', margin: '8px 0' }}>
-                  Приходилось ли тебе за последние полгода проводить 1:1, на котором нужно было мотивировать сотрудника дополнительно по уже реализуемой задаче (1-4 балла, вес = 1):
+                <p style={{ color: '#999', fontSize: '4px', margin: '8px 0' }}>
+                  Приходилось ли тебе за последние полгода проводить :, на котором нужно было мотивировать сотрудника дополнительно по уже реализуемой задаче (-4 балла, вес = ):
                 </p>
-                <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '12px', alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '00px fr', gap: 'px', alignItems: 'start' }}>
                   <select
                     value={formData.personal_qualities_score}
                     onChange={(e) => setFormData({...formData, personal_qualities_score: parseInt(e.target.value)})}
                     required
-                    style={{ padding: '12px' }}
+                    style={{ padding: 'px' }}
                   >
-                    <option value={1}>1 - Не боялся брать на себя больше ответственности в задаче</option>
-                    <option value={2}>2 - Выстраивал открытую прозрачную и точную коммуникацию с коллегами</option>
-                    <option value={3}>3 - Оперативно делился информацией о задаче с коллегами</option>
+                    <option value={}> - Не боялся брать на себя больше ответственности в задаче</option>
+                    <option value={}> - Выстраивал открытую прозрачную и точную коммуникацию с коллегами</option>
+                    <option value={}> - Оперативно делился информацией о задаче с коллегами</option>
                     <option value={4}>4 - Выстраивал работу по задаче</option>
                   </select>
                   <textarea
                     value={formData.personal_qualities_comment}
                     onChange={(e) => setFormData({...formData, personal_qualities_comment: e.target.value})}
                     placeholder="Комментарий"
-                    rows={3}
+                    rows={}
                   />
                 </div>
               </div>
 
               {/* Итого по результативности */}
               <div style={{
-                marginTop: '24px',
-                padding: '16px',
-                background: '#1a1a1a',
+                marginTop: '4px',
+                padding: '6px',
+                background: '#aaa',
                 borderRadius: '8px',
                 borderLeft: '4px solid #4caf50'
               }}>
-                <strong style={{ color: '#4caf50', fontSize: '18px' }}>
+                <strong style={{ color: '#4caf50', fontSize: '8px' }}>
                   Результативность: {calculatePerformanceTotal()} баллов
                 </strong>
-                <p style={{ color: '#999', margin: '8px 0 0 0', fontSize: '14px' }}>
+                <p style={{ color: '#999', margin: '8px 0 0 0', fontSize: '4px' }}>
                   (Профессиональные качества + Личные качества)
                 </p>
               </div>
             </div>
 
-            {/* Раздел 2: Потенциал */}
+            {/* Раздел : Потенциал */}
             <div style={{
-              background: 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
-              borderRadius: '12px',
-              padding: '24px',
-              marginBottom: '24px',
-              border: '1px solid #404040'
+              background: 'linear-gradient(5deg, #aaa 0%, #fff 00%)',
+              borderRadius: 'px',
+              padding: '4px',
+              marginBottom: '4px',
+              border: 'px solid #404040'
             }}>
-              <h2 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>2. Потенциал</h2>
+              <h style={{ color: 'var(--wink-orange)', marginTop: 0 }}>. Потенциал</h>
               
-              <p style={{ color: '#999', marginBottom: '20px' }}>
-                Вопросы с ответами Да/Нет (каждый вопрос = 0/1 балл):
+              <p style={{ color: '#999', marginBottom: '0px' }}>
+                Вопросы с ответами Да/Нет (каждый вопрос = 0/ балл):
               </p>
 
-              {/* Вопрос 3.1 */}
+              {/* Вопрос . */}
               <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.took_more_responsibility}
                     onChange={(e) => setFormData({...formData, took_more_responsibility: e.target.checked})}
-                    style={{ width: '20px', height: '20px' }}
+                    style={{ width: '0px', height: '0px' }}
                   />
                   <span>
-                    Приходилось ли тебе за последние полгода проводить 1:1, на котором нужно было мотивировать сотрудника дополнительно по уже реализуемой задаче
+                    Приходилось ли тебе за последние полгода проводить :, на котором нужно было мотивировать сотрудника дополнительно по уже реализуемой задаче
                   </span>
                 </label>
-                <p style={{ color: '#666', fontSize: '13px', marginLeft: '32px' }}>Да/Нет (0/1 балл)</p>
+                <p style={{ color: '#666', fontSize: 'px', marginLeft: 'px' }}>Да/Нет (0/ балл)</p>
               </div>
 
-              {/* Вопрос 3.2 */}
+              {/* Вопрос . */}
               <div className="form-group">
-                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={formData.communicated_transparently}
                     onChange={(e) => setFormData({...formData, communicated_transparently: e.target.checked})}
-                    style={{ width: '20px', height: '20px' }}
+                    style={{ width: '0px', height: '0px' }}
                   />
                   <span>
                     Знаешь ли ты о случаях, когда сотрудник не делился дисккоммуникацией с другими коллегами и это негативно сказывалось на результатах
                   </span>
                 </label>
-                <p style={{ color: '#666', fontSize: '13px', marginLeft: '32px' }}>Да/Нет (0/1 балл)</p>
+                <p style={{ color: '#666', fontSize: 'px', marginLeft: 'px' }}>Да/Нет (0/ балл)</p>
               </div>
 
-              {/* Вопрос 3.3 */}
+              {/* Вопрос . */}
               <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', display: 'block' }}>
+                <label style={{ fontSize: '6px', fontWeight: '600', marginBottom: 'px', display: 'block' }}>
                   Знаешь ли ты о желании сотрудника развиваться дальше (в каком треке, какие роли интересны)
                 </label>
-                <div style={{ marginLeft: '16px' }}>
+                <div style={{ marginLeft: '6px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
                     <input
                       type="radio"
@@ -369,7 +369,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                       onChange={() => setFormData({...formData, shared_knowledge: true})}
                       style={{ marginRight: '8px' }}
                     />
-                    1) Да, хочет развиваться и проактивно себя ведет
+                    ) Да, хочет развиваться и проактивно себя ведет
                   </label>
                   <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
                     <input
@@ -380,7 +380,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                       onChange={() => setFormData({...formData, shared_knowledge: false, completed_task: true})}
                       style={{ marginRight: '8px' }}
                     />
-                    2) Да, хочет развиваться, но сам не может идти по плану развития, нужна помощь менеджера/HR
+                    ) Да, хочет развиваться, но сам не может идти по плану развития, нужна помощь менеджера/HR
                   </label>
                   <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
                     <input
@@ -391,7 +391,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                       onChange={() => setFormData({...formData, shared_knowledge: false, completed_task: false})}
                       style={{ marginRight: '8px' }}
                     />
-                    3) Не уверен, что есть желание развиваться
+                    ) Не уверен, что есть желание развиваться
                   </label>
                   <label style={{ display: 'block', cursor: 'pointer' }}>
                     <input
@@ -405,17 +405,17 @@ const PotentialAssessment = ({ user, onLogout }) => {
                     4) Не хочет
                   </label>
                 </div>
-                <p style={{ color: '#666', fontSize: '13px', marginLeft: '16px', marginTop: '8px' }}>
-                  (0-1 балл)
+                <p style={{ color: '#666', fontSize: 'px', marginLeft: '6px', marginTop: '8px' }}>
+                  (0- балл)
                 </p>
               </div>
 
-              {/* Вопрос 3.4 */}
+              {/* Вопрос .4 */}
               <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', display: 'block' }}>
+                <label style={{ fontSize: '6px', fontWeight: '600', marginBottom: 'px', display: 'block' }}>
                   Считаешь ли ты сотрудника своим преемником
                 </label>
-                <div style={{ display: 'flex', gap: '20px', marginLeft: '16px' }}>
+                <div style={{ display: 'flex', gap: '0px', marginLeft: '6px' }}>
                   <label style={{ cursor: 'pointer' }}>
                     <input
                       type="radio"
@@ -437,152 +437,152 @@ const PotentialAssessment = ({ user, onLogout }) => {
                     Нет
                   </label>
                 </div>
-                <p style={{ color: '#666', fontSize: '13px', marginLeft: '16px', marginTop: '8px' }}>
-                  (1/0 балл)
+                <p style={{ color: '#666', fontSize: 'px', marginLeft: '6px', marginTop: '8px' }}>
+                  (/0 балл)
                 </p>
               </div>
 
-              {/* Вопрос 3.5 */}
+              {/* Вопрос .5 */}
               <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600', marginBottom: '12px', display: 'block' }}>
+                <label style={{ fontSize: '6px', fontWeight: '600', marginBottom: 'px', display: 'block' }}>
                   Если да, когда он будет готов
                 </label>
-                <div style={{ marginLeft: '16px' }}>
+                <div style={{ marginLeft: '6px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
                     <input
                       type="radio"
                       name="ready_for_development"
-                      value="1-2_years"
-                      checked={formData.ready_for_development === '1-2_years'}
+                      value="-_years"
+                      checked={formData.ready_for_development === '-_years'}
                       onChange={(e) => setFormData({...formData, ready_for_development: e.target.value})}
                       style={{ marginRight: '8px' }}
                     />
-                    1) через 1-2 года
+                    ) через - года
                   </label>
                   <label style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}>
                     <input
                       type="radio"
                       name="ready_for_development"
-                      value="3_years"
-                      checked={formData.ready_for_development === '3_years'}
+                      value="_years"
+                      checked={formData.ready_for_development === '_years'}
                       onChange={(e) => setFormData({...formData, ready_for_development: e.target.value})}
                       style={{ marginRight: '8px' }}
                     />
-                    2) через 3 года
+                    ) через  года
                   </label>
                   <label style={{ display: 'block', cursor: 'pointer' }}>
                     <input
                       type="radio"
                       name="ready_for_development"
-                      value="3_plus_years"
-                      checked={formData.ready_for_development === '3_plus_years'}
+                      value="_plus_years"
+                      checked={formData.ready_for_development === '_plus_years'}
                       onChange={(e) => setFormData({...formData, ready_for_development: e.target.value})}
                       style={{ marginRight: '8px' }}
                     />
-                    3) через 3 и более лет
+                    ) через  и более лет
                   </label>
                 </div>
-                <p style={{ color: '#666', fontSize: '13px', marginLeft: '16px', marginTop: '8px' }}>
-                  1-2 года = 2 балла, 3 года = 1 балл, 3 и более лет = 0 баллов
+                <p style={{ color: '#666', fontSize: 'px', marginLeft: '6px', marginTop: '8px' }}>
+                  - года =  балла,  года =  балл,  и более лет = 0 баллов
                 </p>
               </div>
 
               {/* Итого по потенциалу */}
               <div style={{
-                marginTop: '24px',
-                padding: '16px',
-                background: '#1a1a1a',
+                marginTop: '4px',
+                padding: '6px',
+                background: '#aaa',
                 borderRadius: '8px',
-                borderLeft: '4px solid #2196f3'
+                borderLeft: '4px solid #96f'
               }}>
-                <strong style={{ color: '#2196f3', fontSize: '18px' }}>
+                <strong style={{ color: '#96f', fontSize: '8px' }}>
                   Потенциал: {calculatePotentialTotal()} баллов
                 </strong>
-                <p style={{ color: '#999', margin: '8px 0 0 0', fontSize: '14px' }}>
+                <p style={{ color: '#999', margin: '8px 0 0 0', fontSize: '4px' }}>
                   (Сумма баллов по всем вопросам о потенциале)
                 </p>
               </div>
             </div>
 
-            {/* Раздел 3: Риск ухода */}
+            {/* Раздел : Риск ухода */}
             <div style={{
-              background: 'linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 100%)',
-              borderRadius: '12px',
-              padding: '24px',
-              marginBottom: '24px',
-              border: '1px solid #404040'
+              background: 'linear-gradient(5deg, #aaa 0%, #fff 00%)',
+              borderRadius: 'px',
+              padding: '4px',
+              marginBottom: '4px',
+              border: 'px solid #404040'
             }}>
-              <h2 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>3. Дополнительная информация</h2>
+              <h style={{ color: 'var(--wink-orange)', marginTop: 0 }}>. Дополнительная информация</h>
               
               <div className="form-group">
-                <label style={{ fontSize: '16px', fontWeight: '600' }}>
-                  Как ты оцениваешь степень риска ухода сотрудника, где 0 - нет риска, 10 - высокая степень риска ухода даже в этом году
+                <label style={{ fontSize: '6px', fontWeight: '600' }}>
+                  Как ты оцениваешь степень риска ухода сотрудника, где 0 - нет риска, 0 - высокая степень риска ухода даже в этом году
                 </label>
-                <p style={{ color: '#999', fontSize: '14px', margin: '8px 0' }}>
-                  Шкала от 0 до 10:
+                <p style={{ color: '#999', fontSize: '4px', margin: '8px 0' }}>
+                  Шкала от 0 до 0:
                 </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <input
                     type="range"
                     min="0"
-                    max="10"
+                    max="0"
                     value={formData.turnover_risk}
                     onChange={(e) => setFormData({...formData, turnover_risk: parseInt(e.target.value)})}
-                    style={{ flex: 1 }}
+                    style={{ flex:  }}
                   />
                   <div style={{
-                    background: '#1a1a1a',
-                    padding: '8px 16px',
+                    background: '#aaa',
+                    padding: '8px 6px',
                     borderRadius: '8px',
                     minWidth: '60px',
                     textAlign: 'center',
-                    fontSize: '18px',
+                    fontSize: '8px',
                     fontWeight: 'bold',
-                    color: formData.turnover_risk >= 8 ? '#f44336' : 
+                    color: formData.turnover_risk >= 8 ? '#f446' : 
                            formData.turnover_risk >= 4 ? '#ff9800' : '#4caf50'
                   }}>
                     {formData.turnover_risk}
                   </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '13px', color: '#666' }}>
-                  <span>0-2: низкий риск (3 балла)</span>
-                  <span>3-5: средний риск (2 балла)</span>
-                  <span>6-7: повышенный риск (1 балл)</span>
-                  <span>8-10: высокий риск (0 баллов)</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: 'px', color: '#666' }}>
+                  <span>0-: низкий риск ( балла)</span>
+                  <span>-5: средний риск ( балла)</span>
+                  <span>6-7: повышенный риск ( балл)</span>
+                  <span>8-0: высокий риск (0 баллов)</span>
                 </div>
               </div>
             </div>
 
             {/* Итоговый блок */}
             <div style={{
-              background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.2) 0%, rgba(247, 147, 30, 0.2) 100%)',
-              borderRadius: '12px',
-              padding: '24px',
-              marginBottom: '24px',
-              border: '2px solid var(--wink-orange)'
+              background: 'linear-gradient(5deg, rgba(55, 07, 5, 0.) 0%, rgba(47, 47, 0, 0.) 00%)',
+              borderRadius: 'px',
+              padding: '4px',
+              marginBottom: '4px',
+              border: 'px solid var(--wink-orange)'
             }}>
-              <h2 style={{ color: 'var(--wink-orange)', marginTop: 0 }}>Итоговая оценка</h2>
+              <h style={{ color: 'var(--wink-orange)', marginTop: 0 }}>Итоговая оценка</h>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'fr fr', gap: '0px' }}>
                 <div style={{
-                  background: '#1a1a1a',
-                  padding: '20px',
+                  background: '#aaa',
+                  padding: '0px',
                   borderRadius: '8px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ color: '#4caf50', fontSize: '36px', fontWeight: 'bold', marginBottom: '8px' }}>
+                  <div style={{ color: '#4caf50', fontSize: '6px', fontWeight: 'bold', marginBottom: '8px' }}>
                     {calculatePerformanceTotal()}
                   </div>
                   <div style={{ color: '#999' }}>Результативность</div>
                 </div>
                 
                 <div style={{
-                  background: '#1a1a1a',
-                  padding: '20px',
+                  background: '#aaa',
+                  padding: '0px',
                   borderRadius: '8px',
                   textAlign: 'center'
                 }}>
-                  <div style={{ color: '#2196f3', fontSize: '36px', fontWeight: 'bold', marginBottom: '8px' }}>
+                  <div style={{ color: '#96f', fontSize: '6px', fontWeight: 'bold', marginBottom: '8px' }}>
                     {calculatePotentialTotal()}
                   </div>
                   <div style={{ color: '#999' }}>Потенциал</div>
@@ -591,12 +591,12 @@ const PotentialAssessment = ({ user, onLogout }) => {
             </div>
 
             {/* Кнопки */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 'px', justifyContent: 'flex-end' }}>
               <button
                 type="button"
                 onClick={() => navigate('/manager')}
                 className="btn-secondary"
-                style={{ padding: '12px 24px' }}
+                style={{ padding: 'px 4px' }}
               >
                 Отмена
               </button>
@@ -604,7 +604,7 @@ const PotentialAssessment = ({ user, onLogout }) => {
                 type="submit"
                 className="btn-primary"
                 disabled={loading || !selectedEmployee || !selectedCycle}
-                style={{ padding: '12px 24px' }}
+                style={{ padding: 'px 4px' }}
               >
                 {loading ? 'Сохранение...' : 'Сохранить оценку'}
               </button>

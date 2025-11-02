@@ -1,15 +1,15 @@
-const { Pool } = require('pg');
+﻿const { Pool } = require('pg');
 
 // Конфигурация подключения к PostgreSQL
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
+  port: process.env.DB_PORT || 54,
   database: process.env.DB_NAME || 'wink_performance_review',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'wink2025',
-  max: 20, // максимум подключений в пуле
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  password: process.env.DB_PASSWORD || 'wink05',
+  max: 0, // максимум подключений в пуле
+  idleTimeoutMillis: 0000,
+  connectionTimeoutMillis: 000,
   client_encoding: 'UTF8'
 });
 
@@ -20,7 +20,7 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ Ошибка PostgreSQL:', err);
-  process.exit(-1);
+  process.exit(-);
 });
 
 // Тестовый запрос для проверки
@@ -57,7 +57,7 @@ async function getClient() {
   
   // Устанавливаем таймаут для освобождения клиента
   const timeout = setTimeout(() => {
-    console.error('⚠️ Клиент не был освобожден в течение 5 секунд!');
+    console.error('⚠ Клиент не был освобожден в течение 5 секунд!');
   }, 5000);
   
   // Переопределяем release для очистки таймаута

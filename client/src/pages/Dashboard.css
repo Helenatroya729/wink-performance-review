@@ -584,8 +584,9 @@
 
 .nine-box-labels {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
 }
 
 .y-label {
@@ -593,17 +594,16 @@
   transform: rotate(180deg);
   color: var(--wink-orange);
   font-weight: 600;
-  align-self: center;
-  margin-right: 12px;
-  position: absolute;
-  left: 24px;
+  font-size: 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .nine-box-matrix {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-left: 40px;
+  flex: 1;
 }
 
 .box-row {
@@ -650,8 +650,8 @@
   text-align: center;
   color: var(--wink-orange);
   font-weight: 600;
+  font-size: 16px;
   margin-top: 12px;
-  margin-left: 40px;
 }
 
 /* Calibration */

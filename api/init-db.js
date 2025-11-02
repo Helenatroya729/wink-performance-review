@@ -1,4 +1,4 @@
-// Скрипт инициализации базы данных для Vercel Postgres
+﻿// Скрипт инициализации базы данных для Vercel Postgres
 // Запустить один раз после создания базы: node api/init-db.js
 
 const { Pool } = require('pg');
@@ -22,13 +22,13 @@ async function initDatabase() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        role VARCHAR(20) NOT NULL CHECK (role IN ('employee', 'manager', 'hr')),
-        position VARCHAR(100),
-        department VARCHAR(100),
+        email VARCHAR(55) UNIQUE NOT NULL,
+        password VARCHAR(55) NOT NULL,
+        first_name VARCHAR(00) NOT NULL,
+        last_name VARCHAR(00) NOT NULL,
+        role VARCHAR(0) NOT NULL CHECK (role IN ('employee', 'manager', 'hr')),
+        position VARCHAR(00),
+        department VARCHAR(00),
         manager_id INTEGER REFERENCES users(id),
         hire_date DATE,
         avatar_url TEXT,
@@ -41,10 +41,10 @@ async function initDatabase() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS evaluation_cycles (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
+        name VARCHAR(55) NOT NULL,
         start_date DATE NOT NULL,
         end_date DATE NOT NULL,
-        status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
+        status VARCHAR(0) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -58,8 +58,8 @@ async function initDatabase() {
         cycle_id INTEGER REFERENCES evaluation_cycles(id) ON DELETE CASCADE,
         title TEXT NOT NULL,
         description TEXT,
-        weight INTEGER DEFAULT 100,
-        status VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'approved', 'rejected', 'completed')),
+        weight INTEGER DEFAULT 00,
+        status VARCHAR(0) DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'approved', 'rejected', 'completed')),
         manager_comment TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -74,7 +74,7 @@ async function initDatabase() {
         employee_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
         goal_id INTEGER REFERENCES goals(id) ON DELETE CASCADE,
         cycle_id INTEGER REFERENCES evaluation_cycles(id) ON DELETE CASCADE,
-        achievement_percent INTEGER CHECK (achievement_percent >= 0 AND achievement_percent <= 100),
+        achievement_percent INTEGER CHECK (achievement_percent >= 0 AND achievement_percent <= 00),
         comment TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -90,7 +90,7 @@ async function initDatabase() {
         requestor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         reviewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         cycle_id INTEGER NOT NULL REFERENCES evaluation_cycles(id) ON DELETE CASCADE,
-        status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
+        status VARCHAR(0) DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(requestor_id, reviewer_id, cycle_id)
       );
@@ -105,11 +105,11 @@ async function initDatabase() {
         requestor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         reviewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         cycle_id INTEGER NOT NULL REFERENCES evaluation_cycles(id) ON DELETE CASCADE,
-        collaboration_rating INTEGER CHECK (collaboration_rating >= 1 AND collaboration_rating <= 5),
+        collaboration_rating INTEGER CHECK (collaboration_rating >=  AND collaboration_rating <= 5),
         collaboration_comment TEXT,
-        technical_rating INTEGER CHECK (technical_rating >= 1 AND technical_rating <= 5),
+        technical_rating INTEGER CHECK (technical_rating >=  AND technical_rating <= 5),
         technical_comment TEXT,
-        communication_rating INTEGER CHECK (communication_rating >= 1 AND communication_rating <= 5),
+        communication_rating INTEGER CHECK (communication_rating >=  AND communication_rating <= 5),
         communication_comment TEXT,
         strengths TEXT,
         areas_for_improvement TEXT,
@@ -126,16 +126,16 @@ async function initDatabase() {
         employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         manager_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         cycle_id INTEGER NOT NULL REFERENCES evaluation_cycles(id) ON DELETE CASCADE,
-        technical_skills INTEGER CHECK (technical_skills >= 1 AND technical_skills <= 5),
-        communication INTEGER CHECK (communication >= 1 AND communication <= 5),
-        teamwork INTEGER CHECK (teamwork >= 1 AND teamwork <= 5),
-        problem_solving INTEGER CHECK (problem_solving >= 1 AND problem_solving <= 5),
-        leadership INTEGER CHECK (leadership >= 1 AND leadership <= 5),
+        technical_skills INTEGER CHECK (technical_skills >=  AND technical_skills <= 5),
+        communication INTEGER CHECK (communication >=  AND communication <= 5),
+        teamwork INTEGER CHECK (teamwork >=  AND teamwork <= 5),
+        problem_solving INTEGER CHECK (problem_solving >=  AND problem_solving <= 5),
+        leadership INTEGER CHECK (leadership >=  AND leadership <= 5),
         strengths TEXT,
         areas_for_improvement TEXT,
         development_plan TEXT,
         overall_comment TEXT,
-        overall_rating INTEGER CHECK (overall_rating >= 1 AND overall_rating <= 5),
+        overall_rating INTEGER CHECK (overall_rating >=  AND overall_rating <= 5),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(employee_id, manager_id, cycle_id)
@@ -163,16 +163,16 @@ async function initDatabase() {
         personal_comment TEXT,
         had_motivation_one_on_one BOOLEAN DEFAULT FALSE,
         knows_miscommunication_cases BOOLEAN DEFAULT FALSE,
-        development_desire VARCHAR(20) CHECK (development_desire IN ('proactive', 'needs_help', 'not_sure', 'no')),
+        development_desire VARCHAR(0) CHECK (development_desire IN ('proactive', 'needs_help', 'not_sure', 'no')),
         is_successor BOOLEAN DEFAULT FALSE,
-        successor_ready_timing VARCHAR(20) CHECK (successor_ready_timing IN ('now', '6_months', 'not_ready')),
-        turnover_risk INTEGER CHECK (turnover_risk >= 0 AND turnover_risk <= 10),
-        ole_priority_1 TEXT,
-        ole_priority_2 TEXT,
+        successor_ready_timing VARCHAR(0) CHECK (successor_ready_timing IN ('now', '6_months', 'not_ready')),
+        turnover_risk INTEGER CHECK (turnover_risk >= 0 AND turnover_risk <= 0),
+        ole_priority_ TEXT,
+        ole_priority_ TEXT,
         performance_raw_score INTEGER DEFAULT 0,
-        performance_final_score INTEGER DEFAULT 1,
+        performance_final_score INTEGER DEFAULT ,
         potential_raw_score INTEGER DEFAULT 0,
-        potential_final_score INTEGER DEFAULT 1,
+        potential_final_score INTEGER DEFAULT ,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(employee_id, cycle_id)
@@ -194,7 +194,7 @@ async function initDatabase() {
     console.log('👥 Создание тестовых пользователей...');
     
     const bcrypt = require('bcryptjs');
-    const hashedPassword = await bcrypt.hash('123456', 10);
+    const hashedPassword = await bcrypt.hash('456', 0);
 
     // Проверяем, есть ли уже пользователи
     const usersCheck = await client.query('SELECT COUNT(*) FROM users');
@@ -203,27 +203,27 @@ async function initDatabase() {
       // HR
       await client.query(`
         INSERT INTO users (email, password, first_name, last_name, role, position, department)
-        VALUES ($1, $2, 'Анна', 'HR', 'hr', 'HR Manager', 'Управление персоналом')
+        VALUES ($, $, 'Анна', 'HR', 'hr', 'HR Manager', 'Управление персоналом')
       `, ['hr@wink.ru', hashedPassword]);
 
       // Менеджер
       await client.query(`
         INSERT INTO users (email, password, first_name, last_name, role, position, department)
-        VALUES ($1, $2, 'Кирилл', 'Менеджеров', 'manager', 'Team Lead', 'Разработка')
-      `, ['manager1@wink.ru', hashedPassword]);
+        VALUES ($, $, 'Кирилл', 'Менеджеров', 'manager', 'Team Lead', 'Разработка')
+      `, ['manager@wink.ru', hashedPassword]);
 
       // Сотрудник
-      const managerResult = await client.query('SELECT id FROM users WHERE email = $1', ['manager1@wink.ru']);
+      const managerResult = await client.query('SELECT id FROM users WHERE email = $', ['manager@wink.ru']);
       const managerId = managerResult.rows[0].id;
 
       await client.query(`
         INSERT INTO users (email, password, first_name, last_name, role, position, department, manager_id)
-        VALUES ($1, $2, 'Иван', 'Сотрудников', 'employee', 'Developer', 'Разработка', $3)
-      `, ['emp1@wink.ru', hashedPassword, managerId]);
+        VALUES ($, $, 'Иван', 'Сотрудников', 'employee', 'Developer', 'Разработка', $)
+      `, ['emp@wink.ru', hashedPassword, managerId]);
 
       console.log('✅ Пользователи созданы!');
     } else {
-      console.log('ℹ️  Пользователи уже существуют');
+      console.log('ℹ  Пользователи уже существуют');
     }
 
     // Создание цикла оценки
@@ -233,18 +233,18 @@ async function initDatabase() {
     if (parseInt(cyclesCheck.rows[0].count) === 0) {
       await client.query(`
         INSERT INTO evaluation_cycles (name, start_date, end_date, status)
-        VALUES ('Q4 2024', '2024-10-01', '2024-12-31', 'active')
+        VALUES ('Q4 04', '04-0-0', '04--', 'active')
       `);
       console.log('✅ Цикл оценки создан!');
     } else {
-      console.log('ℹ️  Цикл оценки уже существует');
+      console.log('ℹ  Цикл оценки уже существует');
     }
 
     console.log('\n🎉 База данных успешно инициализирована!');
     console.log('\n📝 Тестовые аккаунты:');
-    console.log('   HR: hr@wink.ru / 123456');
-    console.log('   Менеджер: manager1@wink.ru / 123456');
-    console.log('   Сотрудник: emp1@wink.ru / 123456\n');
+    console.log('   HR: hr@wink.ru / 456');
+    console.log('   Менеджер: manager@wink.ru / 456');
+    console.log('   Сотрудник: emp@wink.ru / 456\n');
 
   } catch (error) {
     console.error('❌ Ошибка при инициализации базы данных:', error);
@@ -263,5 +263,5 @@ initDatabase()
   })
   .catch((error) => {
     console.error('❌ Ошибка:', error);
-    process.exit(1);
+    process.exit();
   });

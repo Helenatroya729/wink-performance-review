@@ -15,7 +15,6 @@ const PeerFeedback = ({ user, onLogout }) => {
   const [cycles, setCycles] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [showRequestForm, setShowRequestForm] = useState(false);
-  const [prStatuses, setPrStatuses] = useState([]);
   const [requestForm, setRequestForm] = useState({
     reviewer_id: '',
     period_id: '',
@@ -48,21 +47,13 @@ const PeerFeedback = ({ user, onLogout }) => {
       setLoading(true);
       
       if (activeTab === 'request') {
-        // Загружаем индивидуальные периоды сотрудника
-        const periodsData = await api.employeeReviewPeriods.get(user.id);
+        // Загружаем мои периоды с новым API
+        const myPeriodsData = await api.reviewPeriods.getMy();
         
-        // Загружаем статусы Performance Review для каждого периода
-        const statusesPromises = periodsData.map(period => 
-          api.performanceReview.getStatus(period.id)
+        // Показываем только периоды со статусом 'in_progress'
+        const availablePeriods = myPeriodsData.filter(period => 
+          period.status === 'in_progress'
         );
-        const statusesData = await Promise.all(statusesPromises);
-        setPrStatuses(statusesData);
-        
-        // Показываем только периоды со статусом 'available' или 'in_progress'
-        const availablePeriods = periodsData.filter((period, index) => {
-          const status = statusesData[index]?.status;
-          return status === 'available' || status === 'in_progress';
-        });
         
         const [colleaguesData, requestsData] = await Promise.all([
           api.peerFeedback.getColleagues(),
@@ -78,7 +69,6 @@ const PeerFeedback = ({ user, onLogout }) => {
       }
     } catch (error) {
       console.error('Ошибка загрузки данных:', error);
-      alert('Ошибка: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -242,7 +232,7 @@ const PeerFeedback = ({ user, onLogout }) => {
                         padding: '20px',
                         background: 'var(--wink-dark-gray)',
                         borderRadius: '12px',
-                        borderLeft: `4px solid ${request.status === 'completed' ? '#10b981' : 'var(--wink-orange)'}`
+                        borderLeft: `4px solid ${request.status === 'pending' ? 'var(--wink-orange)' : 'var(--wink-gray)'}`
                       }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                           <div>
@@ -253,22 +243,24 @@ const PeerFeedback = ({ user, onLogout }) => {
                               {request.reviewer_position}
                             </div>
                           </div>
-                          <span style={{
-                            padding: '4px 12px',
-                            borderRadius: '20px',
-                            fontSize: '12px',
-                            fontWeight: '600',
-                            backgroundColor: request.status === 'completed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 107, 0, 0.2)',
-                            color: request.status === 'completed' ? '#10b981' : 'var(--wink-orange)'
-                          }}>
-                            {getStatusLabel(request.status)}
-                          </span>
+                          {request.status === 'pending' && (
+                            <span style={{
+                              padding: '4px 12px',
+                              borderRadius: '20px',
+                              fontSize: '12px',
+                              fontWeight: '600',
+                              backgroundColor: 'rgba(255, 107, 0, 0.2)',
+                              color: 'var(--wink-orange)'
+                            }}>
+                              Ожидает ответа
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)' }}>
-                          Цикл: {request.cycle_name}
+                          Период: {request.cycle_name}
                         </div>
                         <div style={{ fontSize: '14px', color: 'var(--wink-light-gray)', marginTop: '4px' }}>
-                          Отправлено: {new Date(request.created_at).toLocaleDateString()}
+                          Запрошено: {new Date(request.created_at).toLocaleDateString('ru-RU')}
                         </div>
                         {request.message && (
                           <div style={{ marginTop: '12px', padding: '12px', background: 'var(--wink-gray)', borderRadius: '8px', fontSize: '14px', color: 'var(--wink-white)' }}>
@@ -343,8 +335,11 @@ const PeerFeedback = ({ user, onLogout }) => {
                   <label>Коллега *</label>
                   <select
                     required
-                    value={requestForm.reviewer_id}
-                    onChange={(e) => setRequestForm({...requestForm, reviewer_id: parseInt(e.target.value)})}
+                    value={requestForm.reviewer_id || ''}
+                    onChange={(e) => setRequestForm({
+                      ...requestForm, 
+                      reviewer_id: e.target.value ? parseInt(e.target.value) : ''
+                    })}
                     style={{
                       width: '100%',
                       padding: '12px',
@@ -356,20 +351,48 @@ const PeerFeedback = ({ user, onLogout }) => {
                     }}
                   >
                     <option value="">Выберите коллегу</option>
-                    {colleagues.map(colleague => (
-                      <option key={colleague.id} value={colleague.id}>
-                        {colleague.first_name} {colleague.last_name} - {colleague.position}
-                      </option>
-                    ))}
+                    {colleagues
+                      .filter(colleague => {
+                        // Если период выбран, фильтруем коллег, которым уже отправлен запрос
+                        if (requestForm.period_id) {
+                          const alreadyRequested = myRequests.some(
+                            req => req.reviewer_id === colleague.id && 
+                                   req.period_id === (typeof requestForm.period_id === 'number' ? requestForm.period_id : parseInt(requestForm.period_id))
+                          );
+                          return !alreadyRequested;
+                        }
+                        return true;
+                      })
+                      .map(colleague => (
+                        <option key={colleague.id} value={colleague.id}>
+                          {colleague.first_name} {colleague.last_name} - {colleague.position}
+                        </option>
+                      ))
+                    }
                   </select>
+                  {requestForm.period_id && colleagues.filter(colleague => {
+                    const periodId = typeof requestForm.period_id === 'number' ? requestForm.period_id : parseInt(requestForm.period_id);
+                    const alreadyRequested = myRequests.some(
+                      req => req.reviewer_id === colleague.id && req.period_id === periodId
+                    );
+                    return !alreadyRequested;
+                  }).length === 0 && (
+                    <p style={{ color: '#FF9800', fontSize: '13px', marginTop: '8px' }}>
+                      ⚠️ Всем доступным коллегам уже отправлены запросы для этого периода
+                    </p>
+                  )}
                 </div>
 
                 <div className="form-group">
                   <label>Период оценки *</label>
                   <select
                     required
-                    value={requestForm.period_id}
-                    onChange={(e) => setRequestForm({...requestForm, period_id: parseInt(e.target.value)})}
+                    value={requestForm.period_id || ''}
+                    onChange={(e) => setRequestForm({
+                      ...requestForm, 
+                      period_id: e.target.value ? parseInt(e.target.value) : '',
+                      reviewer_id: '' // Сбрасываем выбор коллеги при смене периода
+                    })}
                     style={{
                       width: '100%',
                       padding: '12px',
@@ -381,14 +404,11 @@ const PeerFeedback = ({ user, onLogout }) => {
                     }}
                   >
                     <option value="">Выберите период</option>
-                    {cycles.map(cycle => {
-                      const prStatus = prStatuses.find(s => s.period_id === cycle.id);
-                      return (
-                        <option key={cycle.id} value={cycle.id}>
-                          {cycle.name} ({new Date(cycle.start_date).toLocaleDateString('ru-RU')} - {new Date(cycle.end_date).toLocaleDateString('ru-RU')})
-                        </option>
-                      );
-                    })}
+                    {cycles.map(cycle => (
+                      <option key={cycle.id} value={cycle.id}>
+                        {cycle.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -451,44 +471,13 @@ const PeerFeedback = ({ user, onLogout }) => {
                   <label style={{ display: 'block', marginBottom: '12px', color: 'var(--wink-white)', fontWeight: '600' }}>
                     Подпись обратной связью по формату:
                   </label>
-                  <div style={{ 
-                    background: 'var(--wink-dark-gray)', 
-                    padding: '16px', 
-                    borderRadius: '8px',
-                    marginBottom: '12px'
-                  }}>
-                    <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px', marginBottom: '8px' }}>
-                      <strong>Текст вопроса:</strong>
-                    </p>
-                    <p style={{ color: 'var(--wink-white)', fontSize: '14px', lineHeight: '1.6' }}>
-                      Выбери список респондентов, по которым ты можешь дать обратную связь
-                    </p>
-                    <p style={{ color: 'var(--wink-light-gray)', fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>
-                      ФИО респондентов (множественный выбор)
-                    </p>
-                  </div>
-                  <p style={{ color: 'var(--wink-light-gray)', fontSize: '13px', marginBottom: '8px' }}>
-                    <em>Далее ФИО появляются последовательно</em><br/>
-                    <em>На экран автоматически выводится одна оцениваемая задача</em><br/>
-                    <em>"Текст задачи"</em>
-                  </p>
                 </div>
 
                 {/* Вопрос 1: Достижение результатов */}
                 <div className="form-group" style={{ marginBottom: '32px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: 'var(--wink-white)' }}>
+                  <label style={{ display: 'block', marginBottom: '16px', color: 'var(--wink-white)' }}>
                     1. Насколько удалось сотруднику достичь результатов, которые были запланированы по задаче
                   </label>
-                  <div style={{ 
-                    background: 'var(--wink-dark-gray)', 
-                    padding: '16px', 
-                    borderRadius: '8px',
-                    marginBottom: '12px'
-                  }}>
-                    <p style={{ color: 'var(--wink-light-gray)', fontSize: '14px' }}>
-                      <strong>Ответ:</strong> Шкала от 0 до 10
-                    </p>
-                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <span style={{ color: 'var(--wink-light-gray)', fontSize: '14px' }}>0</span>
                     <span style={{ color: 'var(--wink-orange)', fontSize: '16px', fontWeight: '600' }}>

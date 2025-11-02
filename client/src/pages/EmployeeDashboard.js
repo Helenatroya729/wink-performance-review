@@ -210,7 +210,6 @@ const EmployeeDashboard = ({ user, onLogout }) => {
       rejected_by_manager: { text: 'Отклонен руководителем', color: '#EF4444', bg: '#FEEE' },
       in_progress: { text: 'В процессе', color: '#FF6B00', bg: '#FFF4ED' },
       awaiting_calculation: { text: 'Ожидает калькуляции', color: '#8B5CF6', bg: '#EDE9FE' },
-      calculated: { text: 'Рассчитан', color: '#0B98', bg: '#DFAE5' },
       completed: { text: 'Завершен', color: '#059669', bg: '#DFAE5' }
     };
     const badge = statusMap[status] || { text: status, color: '#9CAAF', bg: '#FF4F6' };
@@ -557,23 +556,25 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                 <div style={{ display: 'grid', gap: '16px' }}>
                   {(() => {
                     // Логика выбора одного периода для отображения:
-                    // . Если есть период in_progress, awaiting_calculation, calculated или pending - показываем его
-                    // . Если есть период not_started - показываем первый (ближайший)
-                    // . Если все completed - показываем последний
+                    // 1. Если есть период not_started - показываем его (новый период)
+                    // 2. Если есть период in_progress, awaiting_calculation и т.д. - показываем его
+                    // 3. Если есть период completed - показываем его
+                    // 4. Если все completed - показываем последний
+                    
+                    const notStartedPeriod = myPeriods.find(p => p.status === 'not_started');
                     
                     const activePeriod = myPeriods.find(p => 
                       p.status === 'in_progress' || 
                       p.status === 'pending_manager_approval' || 
                       p.status === 'pending_hr_approval' ||
                       p.status === 'rejected_by_manager' ||
-                      p.status === 'awaiting_calculation' ||
-                      p.status === 'calculated'
+                      p.status === 'awaiting_calculation'
                     );
                     
-                    const notStartedPeriod = myPeriods.find(p => p.status === 'not_started');
+                    const completedPeriod = myPeriods.find(p => p.status === 'completed');
                     
-                    // Выбираем период для отображения
-                    const periodToShow = activePeriod || notStartedPeriod || myPeriods[myPeriods.length - 1];
+                    // Выбираем период для отображения (приоритет: not_started > active > completed > last)
+                    const periodToShow = notStartedPeriod || activePeriod || completedPeriod || myPeriods[myPeriods.length - 1];
                     
                     if (!periodToShow) return null;
                     
@@ -582,7 +583,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                     const canRequestEarly = period.status === 'not_started';
                     const isPending = period.status === 'pending_manager_approval' || period.status === 'pending_hr_approval';
                     const isAwaitingCalc = period.status === 'awaiting_calculation';
-                    const isCalculated = period.status === 'calculated';
+                    const isCompleted = period.status === 'completed';
                     
                     return (
                       <div 
@@ -596,7 +597,7 @@ const EmployeeDashboard = ({ user, onLogout }) => {
                             isInProgress ? '#FF6B00' : 
                             isPending ? '#F59E0B' : 
                             isAwaitingCalc ? '#FF6B00' :
-                            isCalculated ? '#10B981' :
+                            isCompleted ? '#10B981' :
                             '#FFA500'
                           }`,
                           boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',

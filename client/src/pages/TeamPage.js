@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
 import api from '../api';
@@ -56,7 +56,7 @@ const TeamPage = ({ user, onLogout }) => {
       
       <div className="dashboard-content">
         <div className="welcome-section">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
             <button 
               onClick={() => navigate(user.role === 'manager' ? '/manager' : `/${user.role}`)} 
               className="btn-back"
@@ -65,7 +65,7 @@ const TeamPage = ({ user, onLogout }) => {
               ← Назад
             </button>
             <div>
-              <h1>{user.role === 'manager' ? 'Моя команда' : 'Команда'}</h1>
+              <h3>{user.role === 'manager' ? 'Моя команда' : 'Команда'}</h3>
               <p>{user.role === 'manager' ? 'Список сотрудников вашей команды' : 'Список всех сотрудников и руководителей'}</p>
             </div>
           </div>
@@ -85,10 +85,10 @@ const TeamPage = ({ user, onLogout }) => {
                   key={member.id} 
                   className="team-member-card"
                   onClick={() => navigate(`/employee/${member.id}`)}
-                  style={{ cursor: 'pointer', transition: 'all 0.3s ease' }}
+                  style={{ cursor: 'pointer', transition: 'all 0.s ease' }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(255, 107, 53, 0.3)';
+                    e.currentTarget.style.boxShadow = '0 8px 0px rgba(55, 07, 5, 0.)';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'translateY(0)';

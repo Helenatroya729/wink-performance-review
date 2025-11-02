@@ -1,13 +1,13 @@
-import React from 'react';
+﻿import React from 'react';
 import Header from '../components/Header';
 import './Dashboard.css';
 
 const AdminDashboard = ({ user, onLogout }) => {
   const systemStats = [
-    { id: 1, title: 'Активных пользователей', value: '247', icon: '' },
-    { id: 2, title: 'Интеграций', value: '5', icon: '' },
-    { id: 3, title: 'Записей в аудите', value: '1,523', icon: '' },
-    { id: 4, title: 'Активных сессий', value: '89', icon: '' }
+    { id: 1, title: 'Активных пользователей', value: '247', icon: '👥' },
+    { id: 2, title: 'Интеграций', value: '5', icon: '🔗' },
+    { id: 3, title: 'Записей в аудите', value: '1,245', icon: '📋' },
+    { id: 4, title: 'Активных сессий', value: '89', icon: '🔐' }
   ];
 
   const users = [
@@ -20,16 +20,16 @@ const AdminDashboard = ({ user, onLogout }) => {
   const integrations = [
     { id: 1, name: 'API Корпоративный портал', status: 'active', lastSync: '5 мин назад' },
     { id: 2, name: 'LDAP/Active Directory', status: 'active', lastSync: '1 час назад' },
-    { id: 3, name: 'Email уведомления', status: 'active', lastSync: '2 мин назад' },
+    { id: 3, name: 'Email уведомления', status: 'active', lastSync: '10 мин назад' },
     { id: 4, name: 'Экспорт в Excel', status: 'active', lastSync: 'По запросу' },
     { id: 5, name: 'Webhooks', status: 'inactive', lastSync: 'Не настроено' }
   ];
 
   const recentAudit = [
-    { id: 1, user: 'hr@wink.ru', action: 'Экспорт данных 9-Box', time: '10:45', ip: '192.168.1.15' },
-    { id: 2, user: 'manager@wink.ru', action: 'Утверждение целей сотрудника', time: '10:32', ip: '192.168.1.22' },
+    { id: 1, user: 'hr@wink.ru', action: 'Экспорт данных 9-Box', time: '10:45', ip: '192.168.1.25' },
+    { id: 2, user: 'manager@wink.ru', action: 'Утверждение целей сотрудника', time: '10:32', ip: '192.168.1.15' },
     { id: 3, user: 'employee@wink.ru', action: 'Создание новой цели', time: '10:15', ip: '192.168.1.34' },
-    { id: 4, user: 'admin@wink.ru', action: 'Изменение роли пользователя', time: '09:58', ip: '192.168.1.1' }
+    { id: 4, user: 'admin@wink.ru', action: 'Изменение роли пользователя', time: '09:58', ip: '192.168.1.10' }
   ];
 
   const getRoleName = (role) => {
@@ -180,7 +180,7 @@ const AdminDashboard = ({ user, onLogout }) => {
               <div className="roles-list">
                 <div className="role-item">
                   <div className="role-name">Администратор</div>
-                  <div className="role-count">2 пользователя</div>
+                  <div className="role-count"> пользователя</div>
                 </div>
                 <div className="role-item">
                   <div className="role-name">HR</div>
@@ -188,11 +188,11 @@ const AdminDashboard = ({ user, onLogout }) => {
                 </div>
                 <div className="role-item">
                   <div className="role-name">Руководитель</div>
-                  <div className="role-count">28 пользователей</div>
+                  <div className="role-count">8 пользователей</div>
                 </div>
                 <div className="role-item">
                   <div className="role-name">Сотрудник</div>
-                  <div className="role-count">212 пользователей</div>
+                  <div className="role-count"> пользователей</div>
                 </div>
               </div>
               <button className="secondary-button">Управление ролями</button>

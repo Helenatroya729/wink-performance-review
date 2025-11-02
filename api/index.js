@@ -1,3 +1,17 @@
+// ==================== SELF-ASSESSMENT ENDPOINT ====================
+app.get('/api/self-assessment/employee/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId);
+    if (!employeeId) return res.status(400).json({ error: 'employeeId required' });
+    const result = await query(
+      `SELECT * FROM self_assessments WHERE user_id = $1 ORDER BY id DESC`,
+      [employeeId]
+    );
+    res.json(result.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -1050,6 +1064,264 @@ app.get('/api/potential-assessment/employee/:employeeId', authenticateToken, asy
   }
 });
 
+// ==================== EARLY PR WORKFLOW ENDPOINTS ====================
+
+// 1. Запрос раннего PR от сотрудника
+app.post('/api/review-periods/:periodId/request-early', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const userId = req.user.id;
+
+    const period = await query(
+      'SELECT * FROM employee_review_periods WHERE id = $1 AND user_id = $2',
+      [periodId, userId]
+    );
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'pending_manager_approval',
+          requested_early_at = NOW()
+      WHERE id = $1
+    `, [periodId]);
+
+    const userInfo = await query(
+      'SELECT u.*, m.id as manager_id FROM users u LEFT JOIN users m ON u.manager_id = m.id WHERE u.id = $1',
+      [userId]
+    );
+
+    if (userInfo.rows[0].manager_id) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        userInfo.rows[0].manager_id,
+        'early_pr_request',
+        'Запрос раннего Performance Review',
+        `${userInfo.rows[0].first_name} ${userInfo.rows[0].last_name} запросил ранний Performance Review`,
+        userId,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true, message: 'Запрос отправлен руководителю' });
+  } catch (error) {
+    console.error('Error requesting early PR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 2. Утверждение руководителем
+app.post('/api/review-periods/:periodId/manager-approve', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+    const managerId = req.user.id;
+
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1 AND u.manager_id = $2
+    `, [periodId, managerId]);
+
+    if (period.rows.length === 0) {
+      return res.status(403).json({ error: 'Вы не руководитель этого сотрудника' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'pending_hr_approval',
+          manager_approved = true,
+          manager_approved_at = NOW(),
+          manager_approved_by = $1
+      WHERE id = $2
+    `, [managerId, periodId]);
+
+    const hrUsers = await query('SELECT id FROM users WHERE role = $1', ['hr']);
+
+    for (const hr of hrUsers.rows) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        hr.id,
+        'early_pr_hr_approval',
+        'Требуется утверждение раннего PR',
+        `Руководитель утвердил ранний PR для ${period.rows[0].first_name} ${period.rows[0].last_name}`,
+        period.rows[0].user_id,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true, message: 'Отправлено HR на утверждение' });
+  } catch (error) {
+    console.error('Error approving by manager:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 3. Утверждение HR
+app.post('/api/review-periods/:periodId/hr-approve', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ error: 'Только HR может утверждать' });
+    }
+
+    const period = await query(`
+      SELECT erp.*, u.first_name, u.last_name, u.id as employee_id
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1
+    `, [periodId]);
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET status = 'in_progress',
+          hr_approved = true,
+          hr_approved_at = NOW(),
+          hr_approved_by = $1
+      WHERE id = $2
+    `, [req.user.id, periodId]);
+
+    await query(`
+      INSERT INTO notifications (user_id, type, title, message, related_id, is_read, created_at)
+      VALUES ($1, $2, $3, $4, $5, false, NOW())
+    `, [
+      period.rows[0].employee_id,
+      'early_pr_approved',
+      'Ранний PR утвержден',
+      'Ваш запрос утвержден. Приступайте к самооценке и запросам обратной связи.',
+      periodId
+    ]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error approving by HR:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 4. Получение своих периодов
+app.get('/api/review-periods/my', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        erp.*,
+        (SELECT COUNT(*) FROM peer_feedback_requests 
+         WHERE requester_id = erp.user_id AND period_id = erp.id AND status = 'completed') as completed_peer_reviews
+      FROM employee_review_periods erp
+      WHERE erp.user_id = $1
+      ORDER BY erp.start_date DESC
+    `, [req.user.id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting my periods:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5. Периоды для утверждения руководителем
+app.get('/api/review-periods/pending-manager-approval', authenticateToken, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        erp.*,
+        u.first_name,
+        u.last_name,
+        u.position
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE u.manager_id = $1 AND erp.status = 'pending_manager_approval'
+      ORDER BY erp.requested_early_at DESC
+    `, [req.user.id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting pending approvals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. Периоды для утверждения HR
+app.get('/api/review-periods/pending-hr-approval', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'hr') {
+      return res.status(403).json({ error: 'Только для HR' });
+    }
+
+    const result = await query(`
+      SELECT 
+        erp.*,
+        u.first_name,
+        u.last_name,
+        u.position
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.status = 'pending_hr_approval'
+      ORDER BY erp.manager_approved_at DESC
+    `, []);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error getting HR pending approvals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. Завершение самооценки
+app.post('/api/review-periods/:periodId/complete-self-assessment', authenticateToken, async (req, res) => {
+  try {
+    const periodId = parseInt(req.params.periodId);
+
+    const period = await query(`
+      SELECT erp.*, u.manager_id, u.first_name, u.last_name
+      FROM employee_review_periods erp
+      JOIN users u ON erp.user_id = u.id
+      WHERE erp.id = $1 AND erp.user_id = $2
+    `, [periodId, req.user.id]);
+
+    if (period.rows.length === 0) {
+      return res.status(404).json({ error: 'Период не найден' });
+    }
+
+    await query(`
+      UPDATE employee_review_periods
+      SET self_assessment_completed = true,
+          self_assessment_completed_at = NOW()
+      WHERE id = $1
+    `, [periodId]);
+
+    if (period.rows[0].peer_reviews_count >= 3 && period.rows[0].manager_id) {
+      await query(`
+        INSERT INTO notifications (user_id, type, title, message, related_user_id, related_id, is_read, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, false, NOW())
+      `, [
+        period.rows[0].manager_id,
+        'ready_for_manager_evaluation',
+        'Готово к оценке',
+        `${period.rows[0].first_name} ${period.rows[0].last_name} завершил самооценку и получил обратную связь`,
+        req.user.id,
+        periodId
+      ]);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error completing self assessment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Запуск сервера
 app.listen(PORT, () => {
   console.log(`
@@ -1076,6 +1348,10 @@ app.listen(PORT, () => {
   console.log('   GET  /api/peer-feedback/received - Полученные оценки');
   console.log('   POST /api/manager-evaluation/submit - Оценка сотрудника менеджером');
   console.log('   GET  /api/manager-evaluation/employee/:id/cycle/:id - Оценки сотрудника');
+  console.log('   POST /api/review-periods/:id/request-early - Запросить ранний PR');
+  console.log('   POST /api/review-periods/:id/manager-approve - Утвердить (руководитель)');
+  console.log('   POST /api/review-periods/:id/hr-approve - Утвердить (HR)');
+  console.log('   GET  /api/review-periods/my - Мои периоды');
   console.log('   GET  /api/health - Проверка здоровья API\n');
 });
 

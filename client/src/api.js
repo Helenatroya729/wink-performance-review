@@ -1,5 +1,5 @@
 // API клиент для работы с бэкендом
-const API_URL = process.env.REACT_APP_API_URL || 'https://wink.shine2fine.keenetic.link:5000/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 // Получение токена из localStorage
 const getToken = () => localStorage.getItem('token');
