@@ -4,6 +4,9 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 // Получение токена из localStorage
 const getToken = () => localStorage.getItem('token');
 
+// Получение базового URL
+const getBaseUrl = () => API_URL;
+
 // Базовая функция для выполнения запросов
 const fetchAPI = async (endpoint, options = {}) => {
   const token = getToken();
@@ -46,6 +49,8 @@ const api = {
       method: 'POST',
       body: JSON.stringify(data)
     }),
+  
+  getBaseUrl: getBaseUrl,
   
   // Аутентификация
   auth: {
@@ -139,7 +144,12 @@ const api = {
       }),
     
     getReceived: () => fetchAPI('/peer-feedback/received'),
-    getByEmployee: (employeeId) => fetchAPI(`/peer-feedback/employee/${employeeId}`)
+    getByEmployee: (employeeId, periodId) => {
+      const url = periodId 
+        ? `/peer-feedback/employee/${employeeId}?periodId=${periodId}`
+        : `/peer-feedback/employee/${employeeId}`;
+      return fetchAPI(url);
+    }
   },
 
   // Оценка менеджера
@@ -218,8 +228,70 @@ const api = {
         : fetchAPI('/employee-review-periods')
   },
 
+  // Новые endpoints для workflow утверждения
+  reviewPeriods: {
+    // Получить свои периоды со статусами
+    getMy: () => fetchAPI('/review-periods/my'),
+    
+    // Запросить ранний PR
+    requestEarly: (periodId) =>
+      fetchAPI(`/review-periods/${periodId}/request-early`, {
+        method: 'POST'
+      }),
+    
+    // Утверждение руководителем
+    managerApprove: (periodId) =>
+      fetchAPI(`/review-periods/${periodId}/manager-approve`, {
+        method: 'POST'
+      }),
+    
+    // Отклонение руководителем
+    managerReject: (periodId, reason) =>
+      fetchAPI(`/review-periods/${periodId}/manager-reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      }),
+    
+    // Утверждение HR
+    hrApprove: (periodId) =>
+      fetchAPI(`/review-periods/${periodId}/hr-approve`, {
+        method: 'POST'
+      }),
+    
+    // Получить периоды для утверждения руководителем
+    getPendingManagerApproval: () => fetchAPI('/review-periods/pending-manager-approval'),
+    
+    // Получить периоды для утверждения HR
+    getPendingHRApproval: () => fetchAPI('/review-periods/pending-hr-approval'),
+    
+    // Завершить самооценку
+    completeSelfAssessment: (periodId) =>
+      fetchAPI(`/review-periods/${periodId}/complete-self-assessment`, {
+        method: 'POST'
+      })
+  },
+
   // Health check
-  health: () => fetchAPI('/health')
+  health: () => fetchAPI('/health'),
+
+  // Методы для менеджера
+  manager: {
+    // Получить детальную информацию о сотруднике
+    getEmployeeDetails: (employeeId, cycleId = null) => {
+      const query = cycleId ? `?cycleId=${cycleId}` : '';
+      return fetchAPI(`/manager/employee/${employeeId}/details${query}`);
+    },
+
+    // Получить периоды команды
+    getTeamPeriods: () => fetchAPI('/manager/team-employee-periods'),
+
+    // Запросить ранний PR
+    requestEarlyReview: (employeeId, reason) =>
+      fetchAPI('/manager/request-early-review', {
+        method: 'POST',
+        body: JSON.stringify({ employeeId, reason })
+      })
+  }
 };
 
 export default api;
