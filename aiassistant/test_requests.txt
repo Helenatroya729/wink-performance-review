@@ -1,0 +1,219 @@
+http://localhost:8000/api/manager-summarize
+
+
+
+(async () => {
+  try {
+    const res = await fetch('http://localhost:8000/api/manager-summarize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+  "employee_name": "Иван Иванов",
+  "goals": [
+    {
+      "result_achievement_rating": 9,
+      "personal_qualities_comment": "Всегда выполняет все поставленные задачи четко в срок. Очень педантичен и аккуратен в работе",
+      "personal_contribution_comment": "Он очень хорошо подгоняет команду, однозначный лидер",
+      "interaction_quality_rating": 5,
+      "improvement_suggestions": "Быть мягче с коллегами, и проще относится к ошибкам команды",
+      "overall_rating": 7
+    }
+  ],
+  "peer_reviews_general": [
+    {
+      "author": "Коллега 1",
+      "position": "Content Manager",
+      "personal_qualities": "Всегда четко выполняет обязанности",
+      "improvement_suggestions": " Иногда грубит во время горящих дедлайнов",
+      "result_achievement_rating": 10,
+      "interaction_quality_rating": 5
+    },
+    {
+      "author": "Коллега 2",
+      "position": "Marketing Manager",
+      "personal_qualities": "Все нормально",
+      "improvement_suggestions": "Улучшить коммуникативные  навыки",
+      "result_achievement_rating": 7,
+      "interaction_quality_rating": 7
+    },
+    {
+      "author": "Коллега 3",
+      "position": "Middle Developer",
+      "personal_qualities": "Упорство и наглость",
+      "improvement_suggestions": "Быть внимательнее к коллегам. Ведет себя как царь!",
+      "result_achievement_rating": 5,
+      "interaction_quality_rating": 0
+    }
+  ],
+  "manager_comments": "Он очень хорошо подгоняет команду, однозначный лидер",
+  "self_assessment": "Вопрос 1: Хочу развиваться в направлении архитектуры систем, изучить микросервисы и cloud-технологии.\nВопрос 2: Изучил новые технологии React и Node.js, применил их в проекте. Прошел курс по архитектуре приложений.\nВопрос 3: Активно взаимодействовал с командой, проводил code review, помогал коллегам разбираться со сложными задачами.\nВопрос 4: Я успешно завершил все запланированные задачи. Реализовал новую функциональность для системы Performance Review, улучшил производительность на 30%."
+
+}) // здесь можно подставить нужный объект
+    });
+
+    const text = await res.text(); // или .json() если ожидаете JSON
+    console.log('Status:', res.status);
+    console.log('Response:', text);
+  } catch (err) {
+    console.error('Error:', err);
+  }
+})();
+
+
+
+
+POST http://localhost:8000/api/results-and-plan
+
+
+(async () => {
+  try {
+    const res = await fetch('http://localhost:8000/api/results-and-plan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+  "employee_name": "Иван Петров",
+  "position": "Старший разработчик",
+  "self_score": 7.5,
+  "manager_score": 8.0,
+  "peer_score": 7.8,
+  "total_score": 7.77,
+  "evaluation_status": "Завершено",
+  "self_assessment": [
+    {
+      "question_text": "Опишите ваши ключевые достижения за период",
+      "answer_score": 4.5,
+      "answer_text": "Успешно завершил проект X по модернизации основной системы, внедрил новую архитектуру микросервисов, сократил время отклика на 40%. Провел обучение команды по новым технологиям.",
+      "task_name": "Проект модернизации",
+      "created_at": "2025-10-15T10:00:00Z"
+    },
+    {
+      "question_text": "Какие трудности вы испытывали?",
+      "answer_score": 3.5,
+      "answer_text": "Испытывал сложности с координацией между командами, иногда не хватало времени на документацию.",
+      "task_name": null,
+      "created_at": "2025-10-15T10:05:00Z"
+    }
+  ],
+  "manager_evaluation": {
+    "performance_total": 8.0,
+    "professional_qualities_score": 4.5,
+    "personal_qualities_score": 3.8,
+    "comments": "Иван показал отличные результаты в текущем периоде. Особенно впечатляет его технический вклад в проект модернизации. Однако замечаю, что он иногда берет на себя слишком много и не всегда эффективно делегирует задачи. Рекомендую развивать навыки лидерства и тайм-менеджмента.",
+    "manager_name": "Петр Сидоров"
+  },
+  "peer_reviews": [
+    {
+      "reviewer_name": "Анна Иванова",
+      "answer_score": 4.0,
+      "answer_text": "Иван - отличный технический специалист, всегда помогает решать сложные задачи. Однако иногда его объяснения слишком технические, хотелось бы более доступного общения.",
+      "question_text": "Оцените коммуникативные навыки коллеги",
+      "task_name": null,
+      "created_at": "2025-10-20T14:00:00Z"
+    },
+    {
+      "reviewer_name": "Михаил Козлов",
+      "answer_score": 4.5,
+      "answer_text": "Работать с Иваном - одно удовольствие. Он всегда готов помочь и поделиться знаниями. Команда ценит его вклад.",
+      "question_text": "Оцените работу в команде",
+      "task_name": "Проект модернизации",
+      "created_at": "2025-10-20T15:00:00Z"
+    }
+  ],
+  "potential_assessment": {
+    "potential_score": 8.5,
+    "performance_score": 8.0,
+    "box_position": "high_potential_high_performance",
+    "readiness_timeframe": "Готов через 6-12 месяцев"
+  }
+}
+) // здесь можно подставить нужный объект
+    });
+
+    const text = await res.text(); // или .json() если ожидаете JSON
+    console.log('Status:', res.status);
+    console.log('Response:', text);
+  } catch (err) {
+    console.error('Error:', err);
+  }
+})();
+
+
+
+
+
+POST http://localhost:8000/api/steps-of-manager
+
+
+
+(async () => {
+  try {
+    const res = await fetch('http://localhost:8000/api/steps-of-manager', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+  "employee_name": "Иван Петров",
+  "position": "Сотрудник",
+  
+  "self_score": 7.5,
+  "manager_score": 8.0,
+  "peer_score": 7.8,
+  "total_score": 7.77,
+  "evaluation_status": "Завершено",
+  
+  "self_assessment": [
+    {
+      "question_text": "Опишите ваши ключевые достижения",
+      "answer_score": 4.5,
+      "answer_text": "Успешно завершил проект X, внедрил новую систему...",
+      "task_name": "Проект модернизации",
+      "created_at": "2025-10-15T10:00:00Z"
+    }
+  ],
+  
+  "manager_evaluation": {
+    "performance_total": 8.0,
+    "professional_qualities_score": 4.5,
+    "personal_qualities_score": 3.8,
+    "comments": "Отличная работа, показал высокие результаты...",
+    "manager_name": "Петр Сидоров"
+  },
+  
+  "peer_reviews": [
+    {
+      "reviewer_name": "Анна Иванова",
+      "answer_score": 4.0,
+      "answer_text": "Хороший коллега, всегда помогает команде...",
+      "question_text": "Оцените коммуникативные навыки",
+      "created_at": "2025-10-20T14:00:00Z"
+    }
+  ],
+  
+  "potential_assessment": {
+    "potential_score": 8.5,
+    "performance_score": 8.0,
+    "box_position": "high_potential_high_performance",
+    "readiness_timeframe": "Готов через 6-12 месяцев"
+  }
+}) // здесь можно подставить нужный объект
+    });
+
+    const text = await res.text(); // или .json() если ожидаете JSON
+    console.log('Status:', res.status);
+    console.log('Response:', text);
+  } catch (err) {
+    console.error('Error:', err);
+  }
+})();
+
+
+
+
+
+
+

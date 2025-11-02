@@ -1,7 +1,9 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime
 
 
+# Модели для manager-summarize (остались без изменений)
 class Goal(BaseModel):
     """Модель цели сотрудника"""
     result_achievement_rating: int
@@ -31,24 +33,71 @@ class ManagerSummarizeRequest(BaseModel):
     self_assessment: Optional[str] = ""
 
 
+# Новые модели для results-and-plan и steps-of-manager
+class SelfAssessmentItem(BaseModel):
+    """Модель элемента самооценки"""
+    question_text: str
+    answer_score: float
+    answer_text: str
+    task_name: Optional[str] = None
+    created_at: str
+
+
+class ManagerEvaluation(BaseModel):
+    """Модель оценки от руководителя"""
+    performance_total: float
+    professional_qualities_score: float
+    personal_qualities_score: float
+    comments: str
+    manager_name: str
+
+
+class PeerReviewItem(BaseModel):
+    """Модель отзыва коллеги"""
+    reviewer_name: str
+    answer_score: float
+    answer_text: str
+    question_text: str
+    task_name: Optional[str] = None
+    created_at: str
+
+
+class PotentialAssessment(BaseModel):
+    """Модель оценки потенциала"""
+    potential_score: float
+    performance_score: float
+    box_position: str
+    readiness_timeframe: str
+
+
 class ResultsAndPlanRequest(BaseModel):
-    """Модель запроса для эндпоинта results-and-plan"""
+    """Модель запроса для эндпоинта results-and-plan (HR рекомендации)"""
     employee_name: str
-    current_results: str
-    achievements: List[str]
-    challenges: List[str]
-    next_quarter_goals: List[str]
-    development_areas: List[str]
+    position: str
+    self_score: float
+    manager_score: float
+    peer_score: float
+    total_score: float
+    evaluation_status: str
+    self_assessment: List[SelfAssessmentItem]
+    manager_evaluation: Optional[ManagerEvaluation] = None
+    peer_reviews: List[PeerReviewItem]
+    potential_assessment: Optional[PotentialAssessment] = None
 
 
 class StepsOfManagerRequest(BaseModel):
-    """Модель запроса для эндпоинта steps-of-manager"""
+    """Модель запроса для эндпоинта steps-of-manager (Управленческие рекомендации)"""
     employee_name: str
-    current_situation: str
-    desired_outcome: str
-    obstacles: List[str]
-    resources: List[str]
-    timeline: str
+    position: str
+    self_score: float
+    manager_score: float
+    peer_score: float
+    total_score: float
+    evaluation_status: str
+    self_assessment: List[SelfAssessmentItem]
+    manager_evaluation: Optional[ManagerEvaluation] = None
+    peer_reviews: List[PeerReviewItem]
+    potential_assessment: Optional[PotentialAssessment] = None
 
 
 # Модели ответов
@@ -59,12 +108,14 @@ class ManagerSummarizeResponse(BaseModel):
 
 class ResultsAndPlanResponse(BaseModel):
     """Модель ответа для эндпоинта results-and-plan"""
-    analysis: str = Field(..., description="Анализ результатов и план развития")
+    achievements: str = Field(..., description="Ключевые достижения сотрудника")
+    improvements: str = Field(..., description="Области для улучшения")
+    development_plan: str = Field(..., description="План развития сотрудника")
 
 
 class StepsOfManagerResponse(BaseModel):
     """Модель ответа для эндпоинта steps-of-manager"""
-    action_plan: str = Field(..., description="План действий руководителя")
+    recommendations: str = Field(..., description="Управленческие рекомендации")
 
 
 # Устаревшая модель для обратной совместимости
